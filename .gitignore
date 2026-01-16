@@ -114,6 +114,7 @@ out
 
 .nuxt
 dist
+!dist/db.sqlite
 
 # Gatsby files
 

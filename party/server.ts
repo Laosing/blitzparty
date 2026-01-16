@@ -43,6 +43,10 @@ export default class Server implements Party.Server {
   lastRateCheck: number = Date.now()
   password?: string
 
+  // Blocking logic
+  blockedIPs: Set<string> = new Set()
+  connectionIPs: Map<string, string> = new Map()
+
   // Inactivity tracking
   lastActivity: number = Date.now()
   keepAliveInterval: ReturnType<typeof setInterval> | null = null
@@ -77,12 +81,37 @@ export default class Server implements Party.Server {
   }
 
   onConnect(conn: Party.Connection, ctx: Party.ConnectionContext) {
+    // 1. Get IP
+    const ip = (
+      ctx.request.headers.get("x-forwarded-for") ||
+      ctx.request.headers.get("cf-connecting-ip") ||
+      "unknown"
+    )
+      .split(",")[0]
+      .trim()
+
+    // 2. Check if blocked
+    if (this.blockedIPs.has(ip)) {
+      console.log(`Rejected blocked IP: ${ip}`)
+      conn.close(4003, "You are banned from this room.")
+      return
+    }
+
+    this.connectionIPs.set(conn.id, ip)
+
     console.log(`Connected: ${conn.id}`)
     this.lastActivity = Date.now()
 
     // Initialize dictionary if needed (lazy load)
     const url = new URL(ctx.request.url)
+    // NOTE: In production (PartyKit), the origin might be the partykit.dev URL.
+    // However, static assets are served from the same domain by PartyKit if configured correctly.
+    // If client is separate (Vite deploy), we might need the client origin.
+    // But since we deploy with 'partykit deploy', it serves 'dist' folder assets.
+    // So 'origin' should be correct.
     const origin = url.origin
+
+    // ... existing password and name logic
     const passwordParam = url.searchParams.get("password") || undefined
     const nameParam = url.searchParams.get("name")
 
@@ -98,10 +127,20 @@ export default class Server implements Party.Server {
       }
     }
 
-    this.dictionary.load(origin).then(() => {
-      if (!this.dictionaryReady) {
-        this.dictionaryReady = true
-        this.broadcastState()
+    this.dictionary.load(origin).then((result) => {
+      if (result.success) {
+        if (!this.dictionaryReady) {
+          this.dictionaryReady = true
+          this.broadcastState()
+        }
+      } else {
+        console.error("Dictionary failed to load:", result.error)
+        this.broadcast({
+          type: "ERROR",
+          message: `Failed to load dictionary: ${
+            result.error || "Unknown error"
+          }. Please refresh.`,
+        })
       }
     })
 
@@ -129,6 +168,8 @@ export default class Server implements Party.Server {
 
   onClose(conn: Party.Connection) {
     console.log(`Disconnected: ${conn.id}`)
+
+    this.connectionIPs.delete(conn.id)
 
     const wasAdmin = this.players.get(conn.id)?.isAdmin
 
@@ -347,6 +388,12 @@ export default class Server implements Party.Server {
 
             const targetConn = this.room.getConnection(data.playerId)
             if (targetConn) {
+              // BLOCK THE ID
+              const ip = this.connectionIPs.get(data.playerId)
+              if (ip && ip !== "unknown") {
+                this.blockedIPs.add(ip)
+                console.log(`Blocked IP ${ip} for player ${data.playerId}`)
+              }
               targetConn.close(4002, "Kicked by Admin")
             }
           }
