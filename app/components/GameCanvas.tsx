@@ -386,7 +386,7 @@ function GameCanvasInner({
               </button>
             ) : (
               <div className="mt-4 opacity-70 animate-pulse">
-                Waiting for host to start...
+                Waiting for the admin to start...
               </div>
             )}
           </div>

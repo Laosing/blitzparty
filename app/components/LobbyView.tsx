@@ -53,12 +53,12 @@ export default function LobbyView() {
       <div className="card bg-base-100 shadow-xl p-8 text-center border border-base-300">
         <h1 className="text-4xl font-bold text-primary flex items-center justify-center gap-4 mb-4">
           <img src="/favicon.svg" alt="Logo" width="48" height="48" />
-          BlitzParty Lobby
+          BlitzParty
         </h1>
         <p className="opacity-70">Choose a room to join or create a new one.</p>
 
         {errorMsg && (
-          <div className="alert alert-error mt-4">
+          <div className="alert alert-error mt-4 relative">
             <span className="font-bold">{errorMsg}</span>
             <button
               onClick={() => setErrorMsg(null)}
@@ -71,7 +71,7 @@ export default function LobbyView() {
 
         <form
           onSubmit={handleCreate}
-          className="my-8 flex flex-col sm:flex-row gap-4 justify-center items-center"
+          className="my-8 flex flex-col sm:flex-row gap-4 items-center justify-center"
         >
           <div className="flex flex-col gap-1 w-full max-w-xs">
             <input

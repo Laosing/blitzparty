@@ -1,5 +1,6 @@
 import type * as Party from "partykit/server"
 import { DictionaryManager } from "./dictionary"
+import { createLogger, Logger } from "./logger"
 
 type Player = {
   id: string
@@ -20,6 +21,7 @@ export default class Server implements Party.Server {
   }
 
   room: Party.Room
+  logger: Logger
   dictionary: DictionaryManager
 
   players: Map<string, Player> = new Map()
@@ -57,6 +59,7 @@ export default class Server implements Party.Server {
 
   constructor(room: Party.Room) {
     this.room = room
+    this.logger = createLogger(`Server [${room.id}]`)
     this.dictionary = new DictionaryManager()
 
     // Clear rate limits periodically
@@ -144,7 +147,7 @@ export default class Server implements Party.Server {
     if (!isLocal) {
       const lastAttempt = this.lastConnectionAttempts.get(ip)
       if (lastAttempt && Date.now() - lastAttempt < 2000) {
-        console.log(`Rejected fast reconnect from IP: ${ip}`)
+        this.logger.warn(`Rejected fast reconnect from IP: ${ip}`)
         conn.close(4003, "Connection rate limited. Please wait.")
         return
       }
@@ -153,14 +156,13 @@ export default class Server implements Party.Server {
 
     // 2. Check if blocked
     if (this.blockedIPs.has(ip)) {
-      console.log(`Rejected blocked IP: ${ip}`)
+      this.logger.warn(`Rejected blocked IP: ${ip}`)
       conn.close(4003, "You are banned from this room.")
       return
     }
 
     this.connectionIPs.set(conn.id, ip)
 
-    console.log(`Connected: ${conn.id}`)
     this.lastActivity = Date.now()
 
     // Initialize dictionary if needed (lazy load)
@@ -182,7 +184,9 @@ export default class Server implements Party.Server {
     } else {
       // Subsequent players must match if password is set
       if (this.password && this.password !== passwordParam) {
-        console.log(`Connection rejected: incorrect password for ${conn.id}`)
+        this.logger.warn(
+          `Connection rejected: incorrect password for ${conn.id}`,
+        )
         conn.close(4000, "Invalid Password")
         return
       }
@@ -195,7 +199,7 @@ export default class Server implements Party.Server {
           this.broadcastState()
         }
       } else {
-        console.error("Dictionary failed to load:", result.error)
+        this.logger.error("Dictionary failed to load:", result.error)
         this.broadcast({
           type: "ERROR",
           message: `Failed to load dictionary: ${
@@ -222,12 +226,19 @@ export default class Server implements Party.Server {
       isAdmin,
     })
 
+    this.logger.info(
+      `Player Connected: ${name} (${conn.id}) [IP: ${isLocal ? "Localhost" : ip}]`,
+    )
+
     this.broadcastState()
     this.reportToLobby()
   }
 
   onClose(conn: Party.Connection) {
-    console.log(`Disconnected: ${conn.id}`)
+    const p = this.players.get(conn.id)
+    this.logger.info(
+      `Player Disconnected: ${p ? p.name : "Unknown"} (${conn.id})`,
+    )
 
     this.connectionIPs.delete(conn.id)
 
@@ -459,7 +470,7 @@ export default class Server implements Party.Server {
               const ip = this.connectionIPs.get(data.playerId)
               if (ip && ip !== "unknown") {
                 this.blockedIPs.add(ip)
-                console.log(`Blocked IP ${ip} for player ${data.playerId}`)
+                this.logger.warn(`Blocked IP ${ip} for player ${data.playerId}`)
               }
               targetConn.close(4002, "Kicked by Admin")
             }
@@ -467,7 +478,7 @@ export default class Server implements Party.Server {
           break
       }
     } catch (e) {
-      console.error("Error parsing message", e)
+      this.logger.error("Error parsing message", e)
     }
   }
 
@@ -575,7 +586,7 @@ export default class Server implements Party.Server {
     // If the submission is impossibly fast (< 300ms) after turn start, ignore or reject.
     const reactionTime = Date.now() - this.turnStartTime
     if (reactionTime < 300) {
-      console.log(
+      this.logger.warn(
         `Rejected implausible reaction time: ${reactionTime}ms by ${playerId}`,
       )
       // Silent ignore or error

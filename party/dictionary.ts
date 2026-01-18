@@ -1,5 +1,8 @@
 import initSqlJs from "sql.js"
 import sqlWasm from "./sql-wasm.wasm"
+import { createLogger } from "./logger"
+
+const logger = createLogger("Dictionary")
 
 export class DictionaryManager {
   private db: any = null
@@ -20,7 +23,7 @@ export class DictionaryManager {
     // Check if we already have db (in case this._isLoaded was confused)
     if (this.db) return { success: true }
 
-    console.log("Loading Dictionary from SQLite...")
+    logger.info("Loading Dictionary from SQLite...")
 
     try {
       const dbUrl = new URL("/dictionary.bin", origin).toString()
@@ -39,21 +42,25 @@ export class DictionaryManager {
               const instance = result.instance || result
               successCallback(instance)
             })
-            .catch((e) => console.error("WASM instantiation failed:", e))
+            .catch((e) => logger.error("WASM instantiation failed:", e))
           return {}
         },
       })
 
       this.db = new SQL.Database(new Uint8Array(dbBinary))
-      console.log(
-        "SQL DB Loaded. Tables:",
-        this.db.exec("SELECT name FROM sqlite_master WHERE type='table'")[0],
+      logger.info(
+        "SQL DB Loaded. Tables:" +
+          JSON.stringify(
+            this.db.exec(
+              "SELECT name FROM sqlite_master WHERE type='table'",
+            )[0],
+          ),
       )
       this._isLoaded = true
       this._resolveReady()
       return { success: true }
     } catch (e: any) {
-      console.error("Failed to load dictionary DB", e)
+      logger.error("Failed to load dictionary DB", e)
       return { success: false, error: e.message || String(e) }
     }
   }
@@ -84,15 +91,15 @@ export class DictionaryManager {
       if (!valid) return { valid: false, reason: "Word not in dictionary." }
       return { valid: true }
     } catch (e: any) {
-      console.error("SQL Error in isValid", e)
+      logger.error("SQL Error in isValid", e)
       // Try to list tables to debug
       try {
         const tables = this.db.exec(
           "SELECT name FROM sqlite_master WHERE type='table'",
         )
-        console.log("Current tables:", JSON.stringify(tables))
+        logger.info("Current tables: " + JSON.stringify(tables))
       } catch (err) {
-        console.error("Failed to list tables during error handling", err)
+        logger.error("Failed to list tables during error handling", err)
       }
       return { valid: false, reason: `Database error: ${e.message || e}` }
     }
@@ -134,7 +141,7 @@ export class DictionaryManager {
         if (count >= minWords) return syllable.toUpperCase()
         attempts++
       } catch (err) {
-        console.error(err)
+        logger.error("Random syllable generation error", err)
         break
       }
     }
