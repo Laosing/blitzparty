@@ -51,7 +51,7 @@ function GameCanvasInner({
   const [timer, setTimer] = useState(10)
   const [maxTimer, setMaxTimer] = useState(10)
   const [startingLives, setStartingLives] = useState(2)
-  const [logs, setLogs] = useState<string[]>([])
+  const [logs, setLogs] = useState<{ message: string; timestamp: number }[]>([])
   const [input, setInput] = useState("")
   const [activePlayerInput, setActivePlayerInput] = useState("")
 
@@ -147,6 +147,8 @@ function GameCanvasInner({
       const pName =
         players.find((p) => p.id === data.playerId)?.name || "Unknown"
       addLog(`BOOM! Player: ${pName} exploded!`)
+    } else if (data.type === ServerMessageType.SYSTEM_MESSAGE) {
+      addLog(`${data.message}`)
     } else if (data.type === ServerMessageType.GAME_OVER) {
       const winnerName =
         players.find((p) => p.id === data.winnerId)?.name ||
@@ -179,7 +181,9 @@ function GameCanvasInner({
   }
 
   const addLog = (msg: string) => {
-    setLogs((prev) => [msg, ...prev].slice(0, 5))
+    setLogs((prev) =>
+      [{ message: msg, timestamp: Date.now() }, ...prev].slice(0, 50),
+    )
   }
 
   const handleStart = () => {
@@ -234,10 +238,12 @@ function GameCanvasInner({
   }
 
   const handleNameChange = () => {
-    setMyName(nameInput) // Commit the new name
-    localStorage.setItem("blitzparty_username", nameInput)
+    const trimmedName = nameInput.trim()
+    if (!trimmedName) return
+    setMyName(trimmedName) // Commit the new name
+    localStorage.setItem("blitzparty_username", trimmedName)
     socket.send(
-      JSON.stringify({ type: ClientMessageType.SET_NAME, name: nameInput }),
+      JSON.stringify({ type: ClientMessageType.SET_NAME, name: trimmedName }),
     )
     setIsNameDisabled(true)
     setTimeout(() => setIsNameDisabled(false), 5000)
@@ -282,7 +288,7 @@ function GameCanvasInner({
                     handleNameChange()
                     setIsNameModalOpen(false)
                   }}
-                  disabled={isNameDisabled}
+                  disabled={isNameDisabled || !nameInput.trim()}
                   className="btn btn-primary"
                 >
                   Save
@@ -587,7 +593,15 @@ function GameCanvasInner({
           <div className="flex-1 overflow-y-auto font-mono text-xs space-y-1">
             {logs.map((l, i) => (
               <div key={i} className="border-l-2 border-primary/20 pl-2">
-                {l}
+                <span className="opacity-50 mr-2">
+                  {new Date(l.timestamp).toLocaleTimeString([], {
+                    hour12: false,
+                    hour: "2-digit",
+                    minute: "2-digit",
+                    second: "2-digit",
+                  })}
+                </span>
+                {l.message}
               </div>
             ))}
           </div>
@@ -602,8 +616,10 @@ function GameCanvasInner({
               <div key={i} className="text-sm">
                 <span className="opacity-50 text-xs mr-2 font-mono">
                   {new Date(msg.timestamp).toLocaleTimeString([], {
+                    hour12: false,
                     hour: "2-digit",
                     minute: "2-digit",
+                    second: "2-digit",
                   })}
                 </span>
                 <span className="font-bold opacity-70">{msg.senderName}:</span>{" "}

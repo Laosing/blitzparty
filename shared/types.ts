@@ -7,6 +7,7 @@ export enum ServerMessageType {
   CHAT_MESSAGE = "CHAT_MESSAGE",
   TYPING_UPDATE = "TYPING_UPDATE",
   ROOM_LIST = "ROOM_LIST",
+  SYSTEM_MESSAGE = "SYSTEM_MESSAGE",
 }
 
 export enum ClientMessageType {

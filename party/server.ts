@@ -284,7 +284,7 @@ export default class Server implements Party.Server {
     if (this.gameState === GameState.PLAYING) {
       if (conn.id === this.activePlayerId) {
         // If the active player left, immediately pass turn to next
-        this.nextTurn(false, false, forceNextId)
+        this.nextTurn(false, forceNextId)
       }
     } else if (this.players.size === 0) {
       // Cleanup if empty
@@ -361,6 +361,10 @@ export default class Server implements Party.Server {
 
         case ClientMessageType.STOP_GAME:
           if (senderPlayer?.isAdmin && this.gameState === GameState.PLAYING) {
+            this.broadcast({
+              type: ServerMessageType.SYSTEM_MESSAGE,
+              message: "Admin stopped the game!",
+            })
             // If strictly one player, treat them as winner to avoid "None"
             if (this.players.size === 1) {
               this.endGame(this.players.keys().next().value)
@@ -510,7 +514,12 @@ export default class Server implements Party.Server {
     }
 
     this.startLoop()
-    this.nextTurn(true, true)
+    this.nextTurn(true)
+
+    this.broadcast({
+      type: ServerMessageType.SYSTEM_MESSAGE,
+      message: "Game Started!",
+    })
   }
 
   startLoop() {
@@ -550,15 +559,11 @@ export default class Server implements Party.Server {
 
     this.checkWinCondition()
     if (this.gameState === GameState.PLAYING) {
-      this.nextTurn(false)
+      this.nextTurn()
     }
   }
 
-  nextTurn(
-    success: boolean,
-    isFirst: boolean = false,
-    overridePlayerId?: string,
-  ) {
+  nextTurn(isFirst: boolean = false, overridePlayerId?: string) {
     if (this.gameState !== GameState.PLAYING) return
 
     const playerIds = Array.from(this.players.values())
@@ -640,7 +645,7 @@ export default class Server implements Party.Server {
         }
       }
 
-      this.nextTurn(true)
+      this.nextTurn()
     } else {
       this.broadcast({
         type: ServerMessageType.ERROR,
