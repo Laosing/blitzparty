@@ -13,6 +13,8 @@ import { Logo } from "./Logo"
 import { Modal } from "./Modal"
 import BombPartyView from "./games/BombPartyView"
 import BombPartySettings from "./games/BombPartySettings"
+import WordleView from "./games/WordleView"
+import WordleSettings from "./games/WordleSettings"
 
 type ServerMessage = {
   type: string
@@ -28,9 +30,11 @@ type ServerMessage = {
 function GameCanvasInner({
   room,
   password,
+  initialMode,
 }: {
   room: string
   password?: string | null
+  initialMode?: string | null
 }) {
   const [gameState, setGameState] = useState<GameState>(GameState.LOBBY)
   const [players, setPlayers] = useState<Player[]>([])
@@ -41,6 +45,31 @@ function GameCanvasInner({
 
   const [logs, setLogs] = useState<{ message: string; timestamp: number }[]>([])
   const [gameLogEnabled, setGameLogEnabled] = useState(true)
+
+  // Settings State (Buffered)
+  const [pendingSettings, setPendingSettings] = useState<any>({})
+
+  const openSettings = () => {
+    setPendingSettings({
+      chatEnabled,
+      gameLogEnabled,
+      ...serverState,
+    })
+    ;(
+      document.getElementById("settings_modal") as HTMLDialogElement
+    )?.showModal() // Explicitly open since we control logic
+  }
+
+  const saveSettings = () => {
+    // Commit changes
+    socket.send(
+      JSON.stringify({
+        type: ClientMessageType.UPDATE_SETTINGS,
+        ...pendingSettings,
+      }),
+    )
+    ;(document.getElementById("settings_modal") as HTMLDialogElement)?.close()
+  }
 
   // Persistent name state (committed)
   const [myName, setMyName] = useState(() => {
@@ -77,6 +106,7 @@ function GameCanvasInner({
     // Add name to query
     query: {
       ...(password ? { password } : {}),
+      ...(initialMode ? { mode: initialMode } : {}),
       name: initialName,
       clientId,
     },
@@ -124,7 +154,10 @@ function GameCanvasInner({
     if (data.type === ServerMessageType.STATE_UPDATE) {
       if (data.gameState) setGameState(data.gameState)
       if (data.players) setPlayers(data.players)
-      if (data.gameMode) setGameMode(data.gameMode)
+      if (data.gameMode) {
+        console.log("GameCanvas received mode:", data.gameMode)
+        setGameMode(data.gameMode)
+      }
       if (data.chatEnabled !== undefined) setChatEnabled(data.chatEnabled)
       if (data.gameLogEnabled !== undefined)
         setGameLogEnabled(data.gameLogEnabled)
@@ -178,15 +211,8 @@ function GameCanvasInner({
   }
 
   const handleSettingsUpdate = (updates: any) => {
-    // Optimistic update of serverState settings for UI responsiveness if needed,
-    // but usually we wait for broadcast.
-    // Send to server
-    socket.send(
-      JSON.stringify({
-        type: ClientMessageType.UPDATE_SETTINGS,
-        ...updates,
-      }),
-    )
+    // Update pending settings locally
+    setPendingSettings((prev: any) => ({ ...prev, ...updates }))
   }
 
   const handleKick = (playerId: string) => {
@@ -269,18 +295,22 @@ function GameCanvasInner({
         actions={
           <>
             <form method="dialog">
-              <button className="btn btn-primary">Close</button>
+              <button className="btn btn-ghost">Cancel</button>
             </form>
+            <button className="btn btn-primary" onClick={saveSettings}>
+              Save
+            </button>
           </>
         }
       >
         <div className="form-control w-full max-w-xs mb-6 px-1">
           <label className="label cursor-pointer justify-start gap-4">
             <span className="label-text font-bold">Enable Chat</span>
+
             <input
               type="checkbox"
               className="toggle toggle-primary"
-              checked={chatEnabled}
+              checked={pendingSettings.chatEnabled ?? chatEnabled}
               onChange={(e) =>
                 handleSettingsUpdate({ chatEnabled: e.target.checked })
               }
@@ -294,7 +324,7 @@ function GameCanvasInner({
             <input
               type="checkbox"
               className="toggle toggle-primary"
-              checked={gameLogEnabled}
+              checked={pendingSettings.gameLogEnabled ?? gameLogEnabled}
               onChange={(e) =>
                 handleSettingsUpdate({ gameLogEnabled: e.target.checked })
               }
@@ -305,16 +335,52 @@ function GameCanvasInner({
         {/* Game Specific Settings */}
         {gameMode === GameMode.BOMB_PARTY && (
           <BombPartySettings
-            startingLives={serverState.startingLives ?? 2}
-            maxTimer={serverState.maxTimer ?? 10}
-            syllableChangeThreshold={serverState.syllableChangeThreshold ?? 2}
+            startingLives={
+              pendingSettings.startingLives ?? serverState.startingLives ?? 2
+            }
+            maxTimer={pendingSettings.maxTimer ?? serverState.maxTimer ?? 10}
+            syllableChangeThreshold={
+              pendingSettings.syllableChangeThreshold ??
+              serverState.syllableChangeThreshold ??
+              2
+            }
+            onUpdate={handleSettingsUpdate}
+          />
+        )}
+        {gameMode === GameMode.WORDLE && (
+          <WordleSettings
+            maxTimer={pendingSettings.maxTimer ?? serverState.maxTimer ?? 10}
+            maxAttempts={
+              pendingSettings.maxAttempts ?? serverState.maxAttempts ?? 5
+            }
             onUpdate={handleSettingsUpdate}
           />
         )}
       </Modal>
 
       {/* Game Content */}
-      {gameMode === GameMode.BOMB_PARTY ? (
+      {gameMode === GameMode.WORDLE ? (
+        <WordleView
+          socket={socket}
+          players={players}
+          gameState={gameState}
+          isAdmin={!!isAmAdmin}
+          serverState={serverState}
+          onKick={handleKick}
+          onEditName={() =>
+            (
+              document.getElementById("name_modal") as HTMLDialogElement
+            )?.showModal()
+          }
+          onOpenSettings={() =>
+            (
+              document.getElementById("settings_modal") as HTMLDialogElement
+            )?.showModal()
+          }
+          room={room}
+          password={password}
+        />
+      ) : gameMode === GameMode.BOMB_PARTY ? (
         <BombPartyView
           socket={socket}
           players={players}
@@ -426,12 +492,23 @@ export default function GameCanvas({ room }: { room: string }) {
     null,
   )
   const [passwordInput, setPasswordInput] = useState("")
+  const [initialMode, setInitialMode] = useState<string | null>(null)
 
   useEffect(() => {
     if (typeof window === "undefined") return
 
     // Check URL first
-    const urlPwd = new URLSearchParams(window.location.search).get("password")
+    const params = new URLSearchParams(window.location.search)
+    const urlPwd = params.get("password")
+    const urlMode = params.get("mode")
+
+    if (urlMode) setInitialMode(urlMode)
+
+    // We don't set initialMode here if it's missing; we wait for room check
+    // if (urlMode) {
+    //   setInitialMode(urlMode)
+    // }
+
     if (urlPwd) {
       setConnectionPassword(urlPwd)
       setCheckingStatus(false)
@@ -451,6 +528,9 @@ export default function GameCanvas({ room }: { room: string }) {
       .then((data: any) => {
         if (data.isPrivate) {
           setNeedsPassword(true)
+        }
+        if (data.mode) {
+          setInitialMode(data.mode)
         }
         setCheckingStatus(false)
       })
@@ -525,5 +605,45 @@ export default function GameCanvas({ room }: { room: string }) {
     )
   }
 
-  return <GameCanvasInner room={room} password={connectionPassword} />
+  if (!/^[a-z]{4}$/.test(room)) {
+    return (
+      <div className="container mx-auto p-4 flex flex-col gap-6 max-w-md mt-10">
+        <div className="card bg-base-100 shadow-xl p-6 text-center border border-base-300">
+          <div className="text-4xl mb-4">🚫</div>
+          <h2 className="text-xl font-bold mb-2">Invalid Room ID</h2>
+          <p className="opacity-70 mb-4">
+            Room codes must be exactly 4 letters (a-z).
+          </p>
+          <a href="/" className="btn btn-primary">
+            Back to Lobby
+          </a>
+        </div>
+      </div>
+    )
+  }
+
+  if (!initialMode) {
+    return (
+      <div className="container mx-auto p-4 flex flex-col gap-6 max-w-md mt-10">
+        <div className="card bg-base-100 shadow-xl p-6 text-center border border-base-300">
+          <div className="text-4xl mb-4">❓</div>
+          <h2 className="text-xl font-bold mb-2">Game Mode Required</h2>
+          <p className="opacity-70 mb-4">
+            You are trying to create a new room without specifying a game mode.
+          </p>
+          <a href="/" className="btn btn-primary">
+            Back to Lobby
+          </a>
+        </div>
+      </div>
+    )
+  }
+
+  return (
+    <GameCanvasInner
+      room={room}
+      password={connectionPassword}
+      initialMode={initialMode}
+    />
+  )
 }

@@ -13,6 +13,15 @@ export enum ServerMessageType {
 
 // GameMode enum added previously
 
+export type GuessResult = "correct" | "present" | "absent"
+
+export interface Guess {
+  playerId: string
+  word: string
+  results: GuessResult[]
+  timestamp: number
+}
+
 export type Player = {
   id: string
   name: string
@@ -38,6 +47,7 @@ export enum ClientMessageType {
 
 export enum GameMode {
   BOMB_PARTY = "BOMB_PARTY",
+  WORDLE = "WORDLE",
 }
 
 export enum GameState {

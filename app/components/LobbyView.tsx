@@ -84,13 +84,13 @@ export default function LobbyView() {
                 const val = e.target.value.toLowerCase().replace(/[^a-z]/g, "")
                 setNewRoomName(val.substring(0, 4))
               }}
-              placeholder="Room (4 letters)"
+              placeholder="Room (4 chars)"
               className="input input-bordered w-full text-center font-mono uppercase placeholder:normal-case"
               maxLength={4}
             />
             {newRoomName.length > 0 && newRoomName.length < 4 && (
               <span className="text-xs text-error absolute -bottom-5 left-0 right-0">
-                Must be 4 letters
+                Must be 4 characters
               </span>
             )}
           </div>
@@ -116,13 +116,20 @@ export default function LobbyView() {
               <span className="label-text">Game Mode</span>
             </label>
             <select
-              className="select select-bordered"
+              className="select select-bordered w-full"
               value={selectedMode}
               onChange={(e) => setSelectedMode(e.target.value as GameMode)}
             >
               <option value={GameMode.BOMB_PARTY}>Bomb Party</option>
-              {/* Future modes can be added here */}
+              <option value={GameMode.WORDLE}>Wordle</option>
             </select>
+            <div className="label">
+              <span className="label-text-alt">
+                {selectedMode === GameMode.BOMB_PARTY
+                  ? "Fast-paced word association game"
+                  : "Multiplayer cooperative word guessing"}
+              </span>
+            </div>
           </div>
         </div>
 

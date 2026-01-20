@@ -148,4 +148,50 @@ export class DictionaryManager {
 
     throw new Error("Failed to generate valid syllable after 20 attempts")
   }
+
+  getRandomWord(length: number = 5): string {
+    if (!this.db) throw new Error("Dictionary not loaded")
+
+    let attempts = 0
+    while (attempts < 20) {
+      try {
+        const stmt = this.db.prepare(
+          "SELECT word FROM English WHERE length(word) = $len ORDER BY RANDOM() LIMIT 1",
+        )
+        stmt.bind({ $len: length })
+        let word = ""
+        if (stmt.step()) {
+          word = stmt.get()[0] as string
+        }
+        stmt.free()
+
+        if (word && /^[a-zA-Z]+$/.test(word)) return word.toUpperCase()
+        attempts++
+      } catch (err) {
+        logger.error("Random word generation error", err)
+        throw new Error("Failed to generate word from DB")
+      }
+    }
+    throw new Error("Failed to find valid word")
+  }
+
+  isWordValid(word: string): boolean {
+    if (!this.db) return false
+    try {
+      const stmt = this.db.prepare(
+        "SELECT count(*) FROM English WHERE word = $word COLLATE NOCASE",
+      )
+      stmt.bind({ $word: word })
+      let valid = false
+      if (stmt.step()) {
+        const count = stmt.get()[0]
+        if (count > 0) valid = true
+      }
+      stmt.free()
+      return valid
+    } catch (e: any) {
+      logger.error("Error checking isWordValid", e)
+      return false
+    }
+  }
 }

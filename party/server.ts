@@ -10,6 +10,7 @@ import {
 import type { ClientMessage, Player } from "../shared/types"
 import type { GameEngine } from "./game-engine"
 import { BombPartyGame } from "./games/bomb-party"
+import { WordleGame } from "./games/wordle"
 
 export default class Server implements Party.Server {
   options: Party.ServerOptions = {
@@ -170,6 +171,10 @@ export default class Server implements Party.Server {
       let storedMode = (await this.room.storage.get("gameMode")) as GameMode
       const paramMode = url.searchParams.get("mode") as GameMode
 
+      this.logger.info(
+        `Checking GameMode. Stored: ${storedMode}, Param: ${paramMode}`,
+      )
+
       if (
         !storedMode &&
         paramMode &&
@@ -177,12 +182,17 @@ export default class Server implements Party.Server {
       ) {
         storedMode = paramMode
         await this.room.storage.put("gameMode", storedMode)
+        this.logger.info(`Set new GameMode: ${storedMode}`)
       }
 
       this.gameMode = storedMode || GameMode.BOMB_PARTY
+      this.logger.info(`Active GameMode: ${this.gameMode}`)
 
       // Instantiate correct game
       switch (this.gameMode) {
+        case GameMode.WORDLE:
+          this.activeGame = new WordleGame(this)
+          break
         case GameMode.BOMB_PARTY:
         default:
           this.activeGame = new BombPartyGame(this)
@@ -311,11 +321,17 @@ export default class Server implements Party.Server {
         return new Response("Banned", { status: 403 })
       }
 
+      let mode = this.gameMode
+      if (this.players.size === 0) {
+        // If room is empty, check storage to see if mode was ever set
+        mode = (await this.room.storage.get("gameMode")) as GameMode
+      }
+
       return new Response(
         JSON.stringify({
           isPrivate: !!this.password,
           players: this.players.size,
-          mode: this.gameMode,
+          mode,
         }),
         {
           headers: {
