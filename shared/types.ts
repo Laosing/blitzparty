@@ -11,6 +11,20 @@ export enum ServerMessageType {
   VALID_WORD = "VALID_WORD",
 }
 
+// GameMode enum added previously
+
+export type Player = {
+  id: string
+  name: string
+  lives: number
+  isAlive: boolean
+  wins: number
+  usedLetters: string[]
+  isAdmin: boolean
+  clientId?: string
+  lastTurn?: { word: string; syllable: string }
+}
+
 export enum ClientMessageType {
   START_GAME = "START_GAME",
   STOP_GAME = "STOP_GAME",
@@ -20,6 +34,10 @@ export enum ClientMessageType {
   CHAT_MESSAGE = "CHAT_MESSAGE",
   UPDATE_SETTINGS = "UPDATE_SETTINGS",
   KICK_PLAYER = "KICK_PLAYER",
+}
+
+export enum GameMode {
+  BOMB_PARTY = "BOMB_PARTY",
 }
 
 export enum GameState {
@@ -42,5 +60,6 @@ export type ClientMessage =
       chatEnabled?: boolean
       gameLogEnabled?: boolean
       syllableChangeThreshold?: number
+      [key: string]: any
     }
   | { type: ClientMessageType.KICK_PLAYER; playerId: string }

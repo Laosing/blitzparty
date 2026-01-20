@@ -1,28 +1,17 @@
 import type * as Party from "partykit/server"
 import { createLogger, Logger } from "../shared/logger"
 import { DictionaryManager } from "./dictionary"
-
-type Player = {
-  id: string
-  name: string
-  lives: number
-  isAlive: boolean
-  wins: number
-  usedLetters: string[]
-  isAdmin: boolean
-  clientId?: string
-  lastTurn?: { word: string; syllable: string }
-}
-
 import {
   ClientMessageType,
   GameState,
   ServerMessageType,
-  type ClientMessage,
+  GameMode,
 } from "../shared/types"
+import type { ClientMessage, Player } from "../shared/types"
+import type { GameEngine } from "./game-engine"
+import { BombPartyGame } from "./games/bomb-party"
 
 export default class Server implements Party.Server {
-  // ... (options, room, dictionary, players, gameState, etc definitions constant)
   options: Party.ServerOptions = {
     hibernate: true,
   }
@@ -34,21 +23,14 @@ export default class Server implements Party.Server {
   players: Map<string, Player> = new Map()
   gameState: GameState = GameState.LOBBY
 
-  // ... (rest of properties)
-  currentSyllable: string = ""
-  usedWords: Set<string> = new Set()
-  activePlayerId: string | null = null
-  timer: number = 0
-  maxTimer: number = 10
-  startingLives: number = 2
+  // Active Game Engine
+  activeGame: GameEngine | null = null
+  gameMode: GameMode = GameMode.BOMB_PARTY
+
   chatEnabled: boolean = true
   gameLogEnabled: boolean = true
-  syllableChangeThreshold: number = 2
-  syllableTurnCount: number = 0
 
-  tickInterval: ReturnType<typeof setTimeout> | null = null
-  nextTickTime: number = 0
-
+  // Dictionary State (Global for now, managed by server)
   dictionaryReady: boolean = false
 
   // Rate limiting (simple window)
@@ -68,8 +50,8 @@ export default class Server implements Party.Server {
   keepAliveInterval: ReturnType<typeof setInterval> | null = null
 
   // Bot Protection
-  turnStartTime: number = 0
   lastConnectionAttempts: Map<string, number> = new Map()
+  initialAliveCount: number = 0
 
   constructor(room: Party.Room) {
     this.room = room
@@ -123,9 +105,6 @@ export default class Server implements Party.Server {
 
     let counter = 2
     while (counter < 100) {
-      // Try appending number. Ensure total length doesn't exceed too much,
-      // but usually we prioritize uniqueness.
-      // "Name (2)" might exceed 16, but that's acceptable for differentiation.
       const candidate = `${baseName} (${counter})`
       if (!existingNames.has(candidate.toLowerCase())) return candidate
       counter++
@@ -133,7 +112,7 @@ export default class Server implements Party.Server {
     return baseName // Fallback
   }
 
-  onConnect(conn: Party.Connection, ctx: Party.ConnectionContext) {
+  async onConnect(conn: Party.Connection, ctx: Party.ConnectionContext) {
     // 0. Validate Room ID (Security)
     if (!/^[a-z]{4}$/.test(this.room.id)) {
       conn.close(4000, "Invalid Room ID. Must be 4 lowercase letters.")
@@ -150,8 +129,6 @@ export default class Server implements Party.Server {
       .trim()
 
     // 2. Anti-Bot: Connection Throttling
-    // Allow 1 connection every 2 seconds per IP
-    // EXEMPT LOCALHOST/UNKNOWN (for dev environment)
     const isLocal =
       ip === "127.0.0.1" ||
       ip === "::1" ||
@@ -186,19 +163,35 @@ export default class Server implements Party.Server {
     }
 
     this.connectionIPs.set(conn.id, ip)
-
     this.lastActivity = Date.now()
 
-    // Initialize dictionary if needed (lazy load)
-    // const url = new URL(ctx.request.url) // Removed duplicate declaration
-    // NOTE: In production (PartyKit), the origin might be the partykit.dev URL.
-    // However, static assets are served from the same domain by PartyKit if configured correctly.
-    // If client is separate (Vite deploy), we might need the client origin.
-    // But since we deploy with 'partykit deploy', it serves 'dist' folder assets.
-    // So 'origin' should be correct.
+    // Initialize Game Mode
+    if (!this.activeGame) {
+      let storedMode = (await this.room.storage.get("gameMode")) as GameMode
+      const paramMode = url.searchParams.get("mode") as GameMode
+
+      if (
+        !storedMode &&
+        paramMode &&
+        Object.values(GameMode).includes(paramMode)
+      ) {
+        storedMode = paramMode
+        await this.room.storage.put("gameMode", storedMode)
+      }
+
+      this.gameMode = storedMode || GameMode.BOMB_PARTY
+
+      // Instantiate correct game
+      switch (this.gameMode) {
+        case GameMode.BOMB_PARTY:
+        default:
+          this.activeGame = new BombPartyGame(this)
+          break
+      }
+    }
+
     const origin = url.origin
 
-    // ... existing password and name logic
     const passwordParam = url.searchParams.get("password") || undefined
     const nameParam = url.searchParams.get("name")
 
@@ -233,23 +226,23 @@ export default class Server implements Party.Server {
       }
     })
 
-    // Use the name from query or default to Guest
     let rawName = nameParam || `Guest ${conn.id.substring(0, 4)}`
     const name = this.getUniqueName(rawName, conn.id)
 
-    // First player is admin
     const isAdmin = this.players.size === 0
 
-    this.players.set(conn.id, {
+    const newPlayer: Player = {
       id: conn.id,
       name,
-      lives: 2,
+      lives: 2, // Default, Game might update this
       isAlive: this.gameState !== GameState.PLAYING,
       wins: 0,
       usedLetters: [],
       isAdmin,
       clientId,
-    })
+    }
+
+    this.players.set(conn.id, newPlayer)
 
     this.logger.info(
       `Player Connected: ${name} (${conn.id}) [IP: ${isLocal ? "Localhost" : ip}]`,
@@ -259,6 +252,9 @@ export default class Server implements Party.Server {
       type: ServerMessageType.SYSTEM_MESSAGE,
       message: `${name} joined the game!`,
     })
+
+    // Notify Game Engine
+    this.activeGame?.onPlayerJoin(newPlayer)
 
     this.broadcastState()
     this.reportToLobby()
@@ -273,69 +269,53 @@ export default class Server implements Party.Server {
     if (!p) return
 
     this.logger.info(`Player Disconnected: ${p.name} (${connectionId})`)
-
     this.connectionIPs.delete(connectionId)
 
     const wasAdmin = p.isAdmin
-
-    // Determine next player if active player is leaving
-    let forceNextId: string | undefined
-    if (
-      this.gameState === GameState.PLAYING &&
-      connectionId === this.activePlayerId
-    ) {
-      const playerIds = Array.from(this.players.values())
-        .filter((p) => p.isAlive)
-        .map((p) => p.id)
-      const idx = playerIds.indexOf(connectionId)
-      if (idx !== -1) {
-        // Pick next in ring
-        const nextIdx = (idx + 1) % playerIds.length
-        if (playerIds[nextIdx] !== connectionId) {
-          forceNextId = playerIds[nextIdx]
-        }
-      }
-    }
 
     this.players.delete(connectionId)
     this.messageCounts.delete(connectionId)
     this.rateLimits.delete(connectionId)
 
+    // Notify Game Engine first (it might handle turn passing etc)
+    this.activeGame?.onPlayerLeave(connectionId)
+
     // Reassign admin if necessary
     if (wasAdmin && this.players.size > 0) {
-      // Assign to the first available player (who has been there longest usually)
       const newAdmin = this.players.values().next().value
       if (newAdmin) {
         newAdmin.isAdmin = true
       }
     }
 
-    this.checkWinCondition() // Check if game should end due to lack of players
-
-    if (this.gameState === GameState.PLAYING) {
-      if (connectionId === this.activePlayerId) {
-        // If the active player left, immediately pass turn to next
-        this.nextTurn(false, forceNextId, false)
-      }
-    } else if (this.players.size === 0) {
-      // Cleanup if empty
-      if (this.tickInterval) clearInterval(this.tickInterval)
-      this.gameState = GameState.LOBBY
-      this.usedWords.clear()
+    if (this.players.size === 0) {
+      this.activeGame?.dispose()
     }
 
     this.broadcastState()
     this.reportToLobby()
   }
 
-  // ... (onRequest, reportToLobby remain same)
-
   async onRequest(req: Party.Request) {
     if (req.method === "GET") {
+      // Security Check: Ban list
+      const ip = (
+        req.headers.get("x-forwarded-for") ||
+        req.headers.get("cf-connecting-ip") ||
+        "unknown"
+      )
+        .split(",")[0]
+        .trim()
+
+      if (this.blockedIPs.has(ip)) {
+        return new Response("Banned", { status: 403 })
+      }
+
       return new Response(
         JSON.stringify({
           isPrivate: !!this.password,
           players: this.players.size,
+          mode: this.gameMode,
         }),
         {
           headers: {
@@ -350,13 +330,13 @@ export default class Server implements Party.Server {
 
   async reportToLobby() {
     try {
-      // We assume the lobby is on the same host
       await this.room.context.parties.lobby.get("global").fetch({
         method: "POST",
         body: JSON.stringify({
           id: this.room.id,
           players: this.players.size,
           isPrivate: !!this.password,
+          mode: this.gameMode,
         }),
       })
     } catch (e) {
@@ -370,8 +350,8 @@ export default class Server implements Party.Server {
     // 1. Rate Limiting
     const count = (this.messageCounts.get(sender.id) || 0) + 1
     this.messageCounts.set(sender.id, count)
-    if (count > 10) {
-      // Too many messages, ignore to prevent spam
+    if (count > 20) {
+      // Slight bump to allow fast typing
       return
     }
 
@@ -379,143 +359,10 @@ export default class Server implements Party.Server {
       const data = JSON.parse(message) as ClientMessage
       const senderPlayer = this.players.get(sender.id)
 
+      // GLOBAL HANDLERS
       switch (data.type) {
-        case ClientMessageType.START_GAME:
-          if (
-            senderPlayer?.isAdmin &&
-            this.gameState === GameState.LOBBY &&
-            this.players.size > 0
-          ) {
-            this.startGame()
-          }
-          break
-
-        case ClientMessageType.STOP_GAME:
-          if (senderPlayer?.isAdmin && this.gameState === GameState.PLAYING) {
-            this.broadcast({
-              type: ServerMessageType.SYSTEM_MESSAGE,
-              message: "Admin stopped the game!",
-            })
-            this.endGame(null)
-          }
-          break
-
-        case ClientMessageType.SUBMIT_WORD:
-          if (
-            this.gameState === GameState.PLAYING &&
-            this.activePlayerId === sender.id &&
-            typeof data.word === "string"
-          ) {
-            this.handleWordSubmission(sender.id, data.word)
-          }
-          break
-
-        case ClientMessageType.UPDATE_TYPING:
-          if (
-            this.gameState === GameState.PLAYING &&
-            this.activePlayerId === sender.id &&
-            typeof data.text === "string"
-          ) {
-            this.broadcast({
-              type: ServerMessageType.TYPING_UPDATE,
-              text: data.text,
-              playerId: sender.id,
-            })
-          }
-          break
-
-        case ClientMessageType.SET_NAME:
-          {
-            const limits = this.rateLimits.get(sender.id) || {
-              lastChat: 0,
-              lastNameChange: 0,
-            }
-            const now = Date.now()
-            if (now - limits.lastNameChange < 5000) {
-              // Rate limited
-              return
-            }
-
-            const p = this.players.get(sender.id)
-            if (p && typeof data.name === "string") {
-              const cleanName = this.getUniqueName(data.name, sender.id)
-              if (cleanName.length > 0) {
-                p.name = cleanName
-                limits.lastNameChange = now
-                this.rateLimits.set(sender.id, limits)
-                this.broadcastState()
-              }
-            }
-          }
-          break
-
-        case ClientMessageType.CHAT_MESSAGE:
-          if (typeof data.text === "string") {
-            if (!this.chatEnabled) return
-
-            const limits = this.rateLimits.get(sender.id) || {
-              lastChat: 0,
-              lastNameChange: 0,
-            }
-            const now = Date.now()
-            if (now - limits.lastChat < 1000) {
-              // Rate limited
-              return
-            }
-
-            const text = data.text.trim().substring(0, 200)
-            if (text.length > 0) {
-              limits.lastChat = now
-              this.rateLimits.set(sender.id, limits)
-
-              const senderPlayer = this.players.get(sender.id)
-              this.broadcast({
-                type: ServerMessageType.CHAT_MESSAGE,
-                senderId: sender.id,
-                senderName: senderPlayer ? senderPlayer.name : "Unknown",
-                text,
-              })
-            }
-          }
-          break
-
-        case ClientMessageType.UPDATE_SETTINGS:
-          if (senderPlayer?.isAdmin) {
-            if (typeof data.startingLives === "number") {
-              let lives = Math.floor(data.startingLives)
-              if (lives < 1) lives = 1
-              if (lives > 10) lives = 10
-              this.startingLives = lives
-            }
-            if (typeof data.maxTimer === "number") {
-              let timer = Math.floor(data.maxTimer)
-              if (timer < 5) timer = 5
-              if (timer > 20) timer = 20
-              this.maxTimer = timer
-            }
-            if (typeof data.chatEnabled === "boolean") {
-              this.chatEnabled = data.chatEnabled
-            }
-            if (
-              data.syllableChangeThreshold !== undefined &&
-              typeof data.syllableChangeThreshold === "number"
-            ) {
-              this.syllableChangeThreshold = Math.max(
-                1,
-                Math.min(10, data.syllableChangeThreshold),
-              )
-            }
-            if (data.gameLogEnabled !== undefined) {
-              this.gameLogEnabled = !!data.gameLogEnabled
-            }
-
-            this.broadcastState()
-          }
-          break
-
         case ClientMessageType.KICK_PLAYER:
           if (senderPlayer?.isAdmin && typeof data.playerId === "string") {
-            // Cannot kick self
             if (data.playerId === sender.id) return
 
             const targetConn = this.room.getConnection(data.playerId)
@@ -538,262 +385,87 @@ export default class Server implements Party.Server {
               if (clientId) {
                 this.blockedIPs.add(clientId)
               }
-              this.logger.warn(
-                `Blocked Player: ${data.playerId} (IP: ${ip}, ClientID: ${clientId})`,
-              )
 
-              // Remove player immediately from state so UI updates instantly
               this.removePlayer(data.playerId)
               targetConn.close(4002, "Kicked by Admin")
             }
           }
-          break
+          return
+
+        case ClientMessageType.SET_NAME:
+          {
+            const limits = this.rateLimits.get(sender.id) || {
+              lastChat: 0,
+              lastNameChange: 0,
+            }
+            const now = Date.now()
+            if (now - limits.lastNameChange < 5000) {
+              return
+            }
+
+            const p = this.players.get(sender.id)
+            if (p && typeof data.name === "string") {
+              const cleanName = this.getUniqueName(data.name, sender.id)
+              if (cleanName.length > 0) {
+                p.name = cleanName
+                limits.lastNameChange = now
+                this.rateLimits.set(sender.id, limits)
+                this.broadcastState()
+              }
+            }
+          }
+          return
+
+        case ClientMessageType.CHAT_MESSAGE:
+          if (typeof data.text === "string") {
+            if (!this.chatEnabled) return
+
+            const limits = this.rateLimits.get(sender.id) || {
+              lastChat: 0,
+              lastNameChange: 0,
+            }
+            const now = Date.now()
+            if (now - limits.lastChat < 1000) {
+              return
+            }
+
+            const text = data.text.trim().substring(0, 200)
+            if (text.length > 0) {
+              limits.lastChat = now
+              this.rateLimits.set(sender.id, limits)
+
+              const senderPlayer = this.players.get(sender.id)
+              this.broadcast({
+                type: ServerMessageType.CHAT_MESSAGE,
+                senderId: sender.id,
+                senderName: senderPlayer ? senderPlayer.name : "Unknown",
+                text,
+              })
+            }
+          }
+          return
       }
+
+      // If not global, delegate to game
+      this.activeGame?.onMessage(message, sender)
     } catch (e) {
       this.logger.error("Error parsing message", e)
     }
   }
 
-  initialAliveCount: number = 0
-
-  startGame() {
-    if (this.players.size < 1) return
-    if (!this.dictionaryReady) return // Prevent starting without dictionary
-
-    this.gameState = GameState.PLAYING
-    this.usedWords.clear()
-    this.initialAliveCount = this.players.size
-    this.syllableTurnCount = 0
-
-    for (const p of this.players.values()) {
-      p.lives = this.startingLives
-      p.isAlive = true
-      p.usedLetters = []
+  // Helpers exposed for GameEngine
+  broadcast(data: any) {
+    if (data.type === ServerMessageType.GAME_OVER && !this.gameLogEnabled) {
+      // If we want to suppress certain messages
     }
-
-    this.startLoop()
-    this.nextTurn(true)
-
-    this.broadcast({
-      type: ServerMessageType.SYSTEM_MESSAGE,
-      message: "Game Started!",
-    })
+    this.room.broadcast(JSON.stringify(data))
   }
 
-  startLoop() {
-    if (this.tickInterval) clearTimeout(this.tickInterval)
-    this.nextTickTime = Date.now() + 1000
-    this.tickInterval = setTimeout(() => this.loopStep(), 1000)
-  }
-
-  loopStep() {
-    if (this.gameState !== GameState.PLAYING) return
-
-    const now = Date.now()
-    // Calculate drift (if we are late, this is positive)
-    const drift = now - this.nextTickTime
-
-    // If massive drift (e.g. suspended), reset
-    if (drift > 1000) {
-      this.nextTickTime = now
+  sendTo(connectionId: string, data: any) {
+    const conn = this.room.getConnection(connectionId)
+    if (conn) {
+      conn.send(JSON.stringify(data))
     }
-
-    this.tick()
-
-    // Schedule next tick
-    this.nextTickTime += 1000
-    const delay = Math.max(0, this.nextTickTime - Date.now())
-    this.tickInterval = setTimeout(() => this.loopStep(), delay)
-  }
-
-  tick() {
-    if (this.gameState !== GameState.PLAYING) return
-
-    this.timer -= 1
-    // Broadcast timer every tick (optimized to only send timer field if possible,
-    // but our handleMessage handles partial updates)
-    this.broadcast({ type: ServerMessageType.STATE_UPDATE, timer: this.timer })
-
-    if (this.timer <= 0) {
-      this.handleExplosion()
-    }
-  }
-
-  handleExplosion() {
-    if (!this.activePlayerId) return
-
-    const p = this.players.get(this.activePlayerId)
-    if (p) {
-      p.lives -= 1
-      p.lastTurn = undefined // Clear last turn on failure
-      if (p.lives <= 0) {
-        p.isAlive = false
-      }
-      this.broadcast({
-        type: ServerMessageType.EXPLOSION,
-        playerId: this.activePlayerId,
-      })
-    }
-
-    this.checkWinCondition()
-    if (this.gameState === GameState.PLAYING) {
-      this.nextTurn(false, undefined, false)
-    }
-  }
-
-  nextTurn(
-    isFirst: boolean = false,
-    overridePlayerId?: string | null,
-    incrementSyllableCount: boolean = true,
-  ) {
-    if (this.gameState !== GameState.PLAYING) return
-
-    const playerIds = Array.from(this.players.values())
-      .filter((p) => p.isAlive)
-      .map((p) => p.id)
-    if (playerIds.length === 0) {
-      this.endGame()
-      return
-    }
-
-    let nextIndex = 0
-
-    if (overridePlayerId && playerIds.includes(overridePlayerId)) {
-      this.activePlayerId = overridePlayerId
-    } else if (!isFirst && this.activePlayerId) {
-      const currentIndex = playerIds.indexOf(this.activePlayerId)
-      nextIndex = (currentIndex + 1) % playerIds.length
-      this.activePlayerId = playerIds[nextIndex]
-    } else if (isFirst) {
-      nextIndex = Math.floor(Math.random() * playerIds.length)
-      this.activePlayerId = playerIds[nextIndex]
-    } else {
-      this.activePlayerId = playerIds[0]
-    }
-
-    let changeSyllable = isFirst
-
-    if (incrementSyllableCount) {
-      // Valid word submitted -> Always change syllable and reset fail count
-      changeSyllable = true
-    } else {
-      // Failed turn (Timer/Explosion) -> Increment fail count
-      this.syllableTurnCount++
-      if (this.syllableTurnCount >= this.syllableChangeThreshold) {
-        changeSyllable = true
-      }
-    }
-
-    if (changeSyllable) {
-      if (!this.dictionaryReady) {
-        this.broadcast({
-          type: ServerMessageType.ERROR,
-          message: "Dictionary not loaded!",
-        })
-        this.endGame()
-        return
-      }
-      this.currentSyllable = this.dictionary.getRandomSyllable(50)
-      this.syllableTurnCount = 0
-    }
-
-    this.timer = this.maxTimer
-    this.turnStartTime = Date.now()
-
-    this.broadcastState()
-  }
-
-  handleWordSubmission(playerId: string, rawWord: string) {
-    // Anti-Bot: Reaction Time Check
-    // If the submission is impossibly fast (< 50ms) after turn start, ignore or reject.
-    const reactionTime = Date.now() - this.turnStartTime
-    if (reactionTime < 50) {
-      this.logger.warn(
-        `Rejected implausible reaction time: ${reactionTime}ms by ${playerId}`,
-      )
-      // Silent ignore or error
-      const p = this.players.get(playerId)
-      this.sendTo(playerId, {
-        type: ServerMessageType.ERROR,
-        message: `Too fast, ${p?.name || "Player"}! Are you a bot?`,
-      })
-      return
-    }
-
-    const word = rawWord.trim()
-    if (this.usedWords.has(word.toLowerCase())) {
-      this.broadcast({
-        type: ServerMessageType.ERROR,
-        message: "Word already used!",
-        hide: true,
-      })
-      return
-    }
-
-    const check = this.dictionary.isValid(word, this.currentSyllable)
-    if (check.valid) {
-      this.usedWords.add(word.toLowerCase())
-
-      const p = this.players.get(playerId)
-      if (p) {
-        p.lastTurn = { word, syllable: this.currentSyllable } // Store last turn
-        for (const char of word.toUpperCase()) {
-          if (char >= "A" && char <= "Z" && !p.usedLetters.includes(char)) {
-            p.usedLetters.push(char)
-          }
-        }
-        if (p.usedLetters.length === 26) {
-          p.lives++
-          p.usedLetters = []
-          this.sendTo(playerId, {
-            type: ServerMessageType.BONUS,
-            message: `Alphabet Complete! ${p.name} gains a life!`,
-          })
-        }
-      }
-
-      this.broadcast({
-        type: ServerMessageType.VALID_WORD,
-        message: `${p?.name || "Player"} submitted: ${word}`,
-      })
-
-      this.nextTurn()
-    } else {
-      this.broadcast({
-        type: ServerMessageType.ERROR,
-        message: check.reason,
-        hide: true,
-      })
-    }
-  }
-
-  checkWinCondition() {
-    const alive = Array.from(this.players.values()).filter((p) => p.isAlive)
-    if (alive.length <= 1 && this.initialAliveCount > 1) {
-      this.endGame(alive[0]?.id)
-    } else if (alive.length === 0) {
-      if (this.players.size === 1) {
-        this.endGame(this.players.keys().next().value)
-      } else {
-        this.endGame(null)
-      }
-    }
-  }
-
-  endGame(winnerId?: string | null) {
-    this.gameState = GameState.ENDED
-    if (this.tickInterval) clearTimeout(this.tickInterval)
-    this.broadcast({ type: ServerMessageType.GAME_OVER, winnerId })
-
-    if (winnerId) {
-      const winner = this.players.get(winnerId)
-      if (winner) {
-        winner.wins += 1
-      }
-    }
-
-    this.gameState = GameState.LOBBY
-    this.broadcastState()
   }
 
   broadcastState() {
@@ -802,25 +474,12 @@ export default class Server implements Party.Server {
         type: ServerMessageType.STATE_UPDATE,
         gameState: this.gameState,
         players: Array.from(this.players.values()),
-        currentSyllable: this.currentSyllable,
-        activePlayerId: this.activePlayerId,
-        timer: this.timer,
-        dictionaryLoaded: this.dictionaryReady,
-        startingLives: this.startingLives,
-        maxTimer: this.maxTimer,
         chatEnabled: this.chatEnabled,
         gameLogEnabled: this.gameLogEnabled,
-        syllableChangeThreshold: this.syllableChangeThreshold,
+        dictionaryLoaded: this.dictionaryReady,
+        gameMode: this.gameMode,
+        ...this.activeGame?.getState(), // Merge game specific state
       }),
     )
-  }
-
-  broadcast(msg: any) {
-    this.room.broadcast(JSON.stringify(msg))
-  }
-
-  sendTo(connectionId: string, msg: any) {
-    const conn = this.room.getConnection(connectionId)
-    if (conn) conn.send(JSON.stringify(msg))
   }
 }

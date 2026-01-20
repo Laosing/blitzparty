@@ -3,65 +3,26 @@ import usePartySocket from "partysocket/react"
 import { useEffect, useRef, useState } from "react"
 import {
   ClientMessageType,
+  GameMode,
   GameState,
   ServerMessageType,
 } from "../../shared/types"
+import type { Player } from "../../shared/types"
 import { useMultiTabPrevention } from "../hooks/useMultiTabPrevention"
-import { CopyIcon, EditIcon, SettingsIcon } from "./Icons"
-import { CustomAvatar, Logo } from "./Logo"
+import { Logo } from "./Logo"
 import { Modal } from "./Modal"
-
-type Player = {
-  id: string
-  name: string
-  lives: number
-  isAlive: boolean
-  wins: number
-  usedLetters: string[]
-  isAdmin?: boolean
-  lastTurn?: { word: string; syllable: string }
-}
+import BombPartyView from "./games/BombPartyView"
+import BombPartySettings from "./games/BombPartySettings"
 
 type ServerMessage = {
   type: string
   gameState?: GameState
   players?: Player[]
-  currentSyllable?: string
-  activePlayerId?: string
-  timer?: number
-  message?: string
-  winnerId?: string
-  playerId?: string
-  dictionaryLoaded?: boolean
-  startingLives?: number
-  maxTimer?: number
+  gameMode?: GameMode
   chatEnabled?: boolean
-  hide?: boolean
-  syllableChangeThreshold?: number
   gameLogEnabled?: boolean
-}
-
-const ALPHABET = "abcdefghijklmnopqrstuvwxyz"
-
-function WordHighlight({
-  word,
-  highlight,
-}: {
-  word: string
-  highlight: string
-}) {
-  const index = word.toLowerCase().indexOf(highlight.toLowerCase())
-  if (index === -1) return <>{word}</>
-
-  return (
-    <>
-      {word.slice(0, index)}
-      <span className="text-primary font-bold">
-        {word.slice(index, index + highlight.length)}
-      </span>
-      {word.slice(index + highlight.length)}
-    </>
-  )
+  // Allow other props
+  [key: string]: any
 }
 
 function GameCanvasInner({
@@ -73,16 +34,13 @@ function GameCanvasInner({
 }) {
   const [gameState, setGameState] = useState<GameState>(GameState.LOBBY)
   const [players, setPlayers] = useState<Player[]>([])
-  const [currentSyllable, setCurrentSyllable] = useState("")
-  const [activePlayerId, setActivePlayerId] = useState<string | null>(null)
-  const [timer, setTimer] = useState(10)
-  const [maxTimer, setMaxTimer] = useState(10)
-  const [startingLives, setStartingLives] = useState(2)
-  const [syllableChangeThreshold, setSyllableChangeThreshold] = useState(2)
+  const [gameMode, setGameMode] = useState<GameMode>(GameMode.BOMB_PARTY)
+
+  // Generic Server State (for game specific data)
+  const [serverState, setServerState] = useState<any>({})
+
   const [logs, setLogs] = useState<{ message: string; timestamp: number }[]>([])
   const [gameLogEnabled, setGameLogEnabled] = useState(true)
-  const [input, setInput] = useState("")
-  const [activePlayerInput, setActivePlayerInput] = useState("")
 
   // Persistent name state (committed)
   const [myName, setMyName] = useState(() => {
@@ -92,15 +50,13 @@ function GameCanvasInner({
     return ""
   })
 
-  // Input field state
+  // Input field for name modal
   const [nameInput, setNameInput] = useState(myName)
 
   // Sync input with localstorage name on mount/update
   useEffect(() => {
     setNameInput(myName)
   }, [myName])
-
-  const [dictionaryLoaded, setDictionaryLoaded] = useState(false)
 
   // Use stable initial name to prevent socket reconnection on name change
   const [initialName] = useState(myName)
@@ -153,9 +109,6 @@ function GameCanvasInner({
   const [chatInput, setChatInput] = useState("")
   const [chatEnabled, setChatEnabled] = useState(true)
 
-  const [tempError, setTempError] = useState<string | null>(null)
-
-  const inputRef = useRef<HTMLInputElement>(null)
   const chatEndRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
@@ -171,25 +124,17 @@ function GameCanvasInner({
     if (data.type === ServerMessageType.STATE_UPDATE) {
       if (data.gameState) setGameState(data.gameState)
       if (data.players) setPlayers(data.players)
-      if (data.currentSyllable) setCurrentSyllable(data.currentSyllable)
-      if (data.activePlayerId !== undefined)
-        setActivePlayerId(data.activePlayerId)
-      if (data.timer !== undefined) setTimer(data.timer)
-      if (data.dictionaryLoaded !== undefined)
-        setDictionaryLoaded(data.dictionaryLoaded)
-      if (data.startingLives !== undefined) setStartingLives(data.startingLives)
-      if (data.maxTimer !== undefined) setMaxTimer(data.maxTimer)
+      if (data.gameMode) setGameMode(data.gameMode)
       if (data.chatEnabled !== undefined) setChatEnabled(data.chatEnabled)
-      if (data.syllableChangeThreshold !== undefined)
-        setSyllableChangeThreshold(data.syllableChangeThreshold)
       if (data.gameLogEnabled !== undefined)
         setGameLogEnabled(data.gameLogEnabled)
+
+      // Update full server state for game specific props
+      setServerState((prev: any) => ({ ...prev, ...data }))
     } else if (data.type === ServerMessageType.ERROR) {
       if (!data.hide) {
         addLog(`Error: ${data.message}`)
       }
-      setTempError(data.message || "Error")
-      setTimeout(() => setTempError(null), 500)
     } else if (data.type === ServerMessageType.BONUS) {
       addLog(`Bonus: ${data.message}`)
     } else if (data.type === ServerMessageType.EXPLOSION) {
@@ -223,13 +168,6 @@ function GameCanvasInner({
           },
         ].slice(-100),
       )
-    } else if (
-      data.type === ServerMessageType.TYPING_UPDATE &&
-      data.text !== undefined
-    ) {
-      if (data.playerId !== socket.id) {
-        setActivePlayerInput(data.text)
-      }
     }
   }
 
@@ -239,35 +177,16 @@ function GameCanvasInner({
     )
   }
 
-  const handleStart = () => {
-    socket.send(JSON.stringify({ type: ClientMessageType.START_GAME }))
-  }
-
-  const handleStop = () => {
-    socket.send(JSON.stringify({ type: ClientMessageType.STOP_GAME }))
-  }
-
-  const handleSubmit = (e: React.FormEvent) => {
-    e.preventDefault()
-    if (!input) return
-    socket.send(
-      JSON.stringify({ type: ClientMessageType.SUBMIT_WORD, word: input }),
-    )
-    setInput("")
-  }
-
-  const handleSettingsSave = () => {
+  const handleSettingsUpdate = (updates: any) => {
+    // Optimistic update of serverState settings for UI responsiveness if needed,
+    // but usually we wait for broadcast.
+    // Send to server
     socket.send(
       JSON.stringify({
         type: ClientMessageType.UPDATE_SETTINGS,
-        startingLives,
-        maxTimer,
-        chatEnabled,
-        gameLogEnabled,
-        syllableChangeThreshold,
+        ...updates,
       }),
     )
-    ;(document.getElementById("settings_modal") as HTMLDialogElement)?.close()
   }
 
   const handleKick = (playerId: string) => {
@@ -304,16 +223,6 @@ function GameCanvasInner({
     setTimeout(() => setIsNameDisabled(false), 5000)
   }
 
-  useEffect(() => {
-    if (socket.id === activePlayerId && gameState === GameState.PLAYING) {
-      inputRef.current?.focus()
-      setInput("") // Clear input when turn starts
-    } else {
-      setActivePlayerInput("") // Clear remote input when turn changes
-    }
-  }, [activePlayerId, gameState, socket.id])
-
-  const isMyTurn = socket.id === activePlayerId
   const isAmAdmin = players.find((p) => p.id === socket.id)?.isAdmin
 
   return (
@@ -353,80 +262,18 @@ function GameCanvasInner({
         </div>
       </Modal>
 
-      {/* Settings Modal */}
+      {/* Settings Modal - Generic Shell */}
       <Modal
         id="settings_modal"
         title="Game Settings"
         actions={
           <>
             <form method="dialog">
-              <button className="btn btn-ghost">Cancel</button>
+              <button className="btn btn-primary">Close</button>
             </form>
-            <button className="btn btn-primary" onClick={handleSettingsSave}>
-              Save & Apply
-            </button>
           </>
         }
       >
-        <div className="form-control w-full max-w-xs mb-6">
-          <label className="label">
-            <span className="label-text">Starting Lives</span>
-          </label>
-          <input
-            type="number"
-            min="1"
-            max="10"
-            value={startingLives}
-            onChange={(e) => setStartingLives(parseInt(e.target.value) || 2)}
-            className="input input-bordered w-full max-w-xs"
-          />
-          <label className="label">
-            <span className="label-text-alt opacity-70">
-              Value between 1 and 10
-            </span>
-          </label>
-        </div>
-        <div className="form-control w-full max-w-xs mb-6">
-          <label className="label">
-            <span className="label-text">Timer (Seconds)</span>
-          </label>
-          <input
-            type="number"
-            min="5"
-            max="20"
-            value={maxTimer}
-            onChange={(e) => setMaxTimer(parseInt(e.target.value) || 10)}
-            className="input input-bordered w-full max-w-xs"
-          />
-          <label className="label">
-            <span className="label-text-alt opacity-70">
-              Value between 5 and 20
-            </span>
-          </label>
-        </div>
-        <div className="form-control w-full max-w-xs mb-6">
-          <label className="label">
-            <span className="label-text">
-              Change syllable after number of tries
-            </span>
-          </label>
-          <input
-            type="number"
-            min="1"
-            max="5"
-            value={syllableChangeThreshold}
-            onChange={(e) =>
-              setSyllableChangeThreshold(parseInt(e.target.value) || 1)
-            }
-            className="input input-bordered w-full max-w-xs"
-          />
-          <label className="label">
-            <span className="label-text-alt opacity-70">
-              Value between 1 and 5
-            </span>
-          </label>
-        </div>
-
         <div className="form-control w-full max-w-xs mb-6 px-1">
           <label className="label cursor-pointer justify-start gap-4">
             <span className="label-text font-bold">Enable Chat</span>
@@ -434,7 +281,9 @@ function GameCanvasInner({
               type="checkbox"
               className="toggle toggle-primary"
               checked={chatEnabled}
-              onChange={(e) => setChatEnabled(e.target.checked)}
+              onChange={(e) =>
+                handleSettingsUpdate({ chatEnabled: e.target.checked })
+              }
             />
           </label>
         </div>
@@ -446,250 +295,50 @@ function GameCanvasInner({
               type="checkbox"
               className="toggle toggle-primary"
               checked={gameLogEnabled}
-              onChange={(e) => setGameLogEnabled(e.target.checked)}
+              onChange={(e) =>
+                handleSettingsUpdate({ gameLogEnabled: e.target.checked })
+              }
             />
           </label>
         </div>
+
+        {/* Game Specific Settings */}
+        {gameMode === GameMode.BOMB_PARTY && (
+          <BombPartySettings
+            startingLives={serverState.startingLives ?? 2}
+            maxTimer={serverState.maxTimer ?? 10}
+            syllableChangeThreshold={serverState.syllableChangeThreshold ?? 2}
+            onUpdate={handleSettingsUpdate}
+          />
+        )}
       </Modal>
 
-      <div className="card bg-base-100 shadow-xl p-6 text-center border border-base-300">
-        <div className="flex justify-between items-center mb-4">
-          <button
-            onClick={() => (window.location.href = "/")}
-            className="btn btn-ghost btn-sm"
-          >
-            ← Lobby
-          </button>
-          <Logo name={room} />
-          <div className="w-16 flex justify-end">
-            {gameState === GameState.LOBBY && isAmAdmin && (
-              <button
-                className="btn btn-ghost btn-sm btn-circle"
-                onClick={() =>
-                  (
-                    document.getElementById(
-                      "settings_modal",
-                    ) as HTMLDialogElement
-                  )?.showModal()
-                }
-                title="Settings"
-              >
-                <SettingsIcon />
-              </button>
-            )}
-          </div>
-        </div>
-
-        <div className="text-sm opacity-70 mb-4">
-          Room:{" "}
-          <button
-            className="font-mono text-lg badge badge-neutral tracking-widest hover:badge-primary transition-colors cursor-pointer gap-2 font-bold"
-            onClick={() => navigator.clipboard.writeText(window.location.href)}
-            title="Copy room link"
-          >
-            {room.toUpperCase()}
-            <CopyIcon />
-            {password && " 🔒"}
-          </button>
-        </div>
-        {gameState === GameState.LOBBY && (
-          <div className="flex flex-col gap-4 items-center">
-            <p className="text-lg">
-              Welcome to booombparty! Type a word containing the letters before
-              time runs out!
-            </p>
-            <div className="flex flex-col sm:flex-row gap-2 items-center w-full justify-center">
-              <div className="badge badge-lg badge-neutral gap-2">
-                Lives: {startingLives}
-              </div>
-              <div className="badge badge-lg badge-neutral gap-2">
-                Timer: {maxTimer}s
-              </div>
-              <div className="badge badge-lg badge-neutral gap-2">
-                Change syllable after: {syllableChangeThreshold} tries
-              </div>
-            </div>
-
-            {isAmAdmin ? (
-              <button
-                onClick={handleStart}
-                disabled={players.length < 1 || !dictionaryLoaded}
-                className="btn btn-primary btn-lg mt-4"
-              >
-                {dictionaryLoaded ? "Start Game" : "Loading Dictionary..."}
-              </button>
-            ) : (
-              <div className="mt-4 opacity-70 animate-pulse">
-                Waiting for the admin to start...
-              </div>
-            )}
-          </div>
-        )}
-
-        {gameState === GameState.PLAYING && (
-          <div>
-            <div className="my-1 flex w-full justify-center gap-0.5 flex-wrap px-2">
-              {[...ALPHABET].map((letter) => {
-                const isUsed = players
-                  .find((p) => p.id === socket.id)
-                  ?.usedLetters.includes(letter.toLocaleUpperCase())
-                return (
-                  <div
-                    className={`kbd ${
-                      isUsed ? "kbd-primary opacity-100" : "opacity-30"
-                    }`}
-                    key={letter}
-                  >
-                    {letter.toUpperCase()}
-                  </div>
-                )
-              })}
-            </div>
-            <div className="text-6xl font-black text-secondary uppercase my-6 animate-pulse tracking-widest">
-              {currentSyllable}
-            </div>
-
-            <div className="w-full h-8 bg-base-300 rounded-full overflow-hidden relative mb-6">
-              <div
-                className="h-full bg-secondary transition-all ease-linear"
-                style={{ width: `${(timer / maxTimer) * 100}%` }}
-              ></div>
-              <span className="absolute inset-0 flex items-center justify-center text-xs font-bold text-base-content">
-                {timer}
-              </span>
-            </div>
-
-            <form onSubmit={handleSubmit} className="mb-4 indicator">
-              {tempError && (
-                <span className="indicator-item indicator-center badge badge-error">
-                  {tempError}
-                </span>
-              )}
-
-              <input
-                ref={inputRef}
-                value={isMyTurn ? input : activePlayerInput}
-                onChange={(e) => {
-                  if (isMyTurn) {
-                    const val = e.target.value
-                    setInput(val)
-                    socket.send(
-                      JSON.stringify({
-                        type: ClientMessageType.UPDATE_TYPING,
-                        text: val,
-                      }),
-                    )
-                  }
-                }}
-                placeholder={
-                  isMyTurn
-                    ? "Type a word!"
-                    : `${
-                        players.find((p) => p.id === activePlayerId)?.name
-                      } is typing...`
-                }
-                disabled={!isMyTurn}
-                autoFocus={isMyTurn}
-                className={`input input-bordered w-full max-w-md text-center text-xl ${
-                  isMyTurn ? "input-primary ring-2 ring-primary/50" : ""
-                }`}
-                autoComplete="off"
-              />
-            </form>
-            {isAmAdmin && (
-              <button
-                onClick={handleStop}
-                className="btn btn-warning btn-sm block m-auto"
-              >
-                Stop Game
-              </button>
-            )}
-          </div>
-        )}
-        {gameState === GameState.ENDED && (
-          <div className="py-8">
-            <h2 className="text-4xl font-bold mb-4">Game Over!</h2>
-            <p>Returning to lobby...</p>
-          </div>
-        )}
-      </div>
-
-      {/* Players Grid */}
-      <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-4">
-        {players.map((p) => (
-          <div
-            key={p.id}
-            className={`card p-4 transition-all duration-300 border-2 relative group ${
-              p.id === activePlayerId
-                ? "border-primary bg-primary/10 scale-105 z-10 shadow-lg"
-                : "border-transparent bg-base-100 placeholder-opacity-50"
-            } ${!p.isAlive ? "opacity-50 grayscale" : ""}`}
-          >
-            {isAmAdmin && p.id !== socket.id && (
-              <button
-                onClick={(e) => {
-                  e.stopPropagation()
-                  handleKick(p.id)
-                }}
-                className="absolute top-2 right-2 btn btn-xs btn-error btn-square opacity-0 group-hover:opacity-100 transition-opacity z-20"
-                title="Kick Player"
-              >
-                ✕
-              </button>
-            )}
-
-            <div className="flex flex-col items-center gap-2">
-              <div className="avatar indicator">
-                {p.isAdmin && (
-                  <span className="indicator-item indicator-center badge badge-warning badge-sm">
-                    Admin
-                  </span>
-                )}
-                <CustomAvatar name={p.name} />
-              </div>
-              <div className="text-center">
-                <h3 className="font-bold flex items-center gap-1 justify-center">
-                  {p.name}{" "}
-                  {p.id === socket.id && (
-                    <>
-                      <span className="badge badge-xs badge-primary">You</span>
-                      <button
-                        onClick={() =>
-                          (
-                            document.getElementById(
-                              "name_modal",
-                            ) as HTMLDialogElement
-                          )?.showModal()
-                        }
-                        className="btn btn-ghost btn-sm btn-circle"
-                        title="Edit Name"
-                      >
-                        <EditIcon />
-                      </button>
-                    </>
-                  )}
-                </h3>
-                <div className="flex gap-1 justify-center text-error mt-1 text-sm">
-                  {"❤".repeat(Math.max(0, p.lives))}
-                </div>
-                <div className="text-xs opacity-60 mt-1">
-                  Wins: {p.wins || 0}
-                </div>
-                {p.lastTurn && (
-                  <div className="text-xs opacity-60 mt-1">
-                    <span className="text-base-content/80 font-medium">
-                      <WordHighlight
-                        word={p.lastTurn.word}
-                        highlight={p.lastTurn.syllable}
-                      />
-                    </span>
-                  </div>
-                )}
-              </div>
-            </div>
-          </div>
-        ))}
-      </div>
+      {/* Game Content */}
+      {gameMode === GameMode.BOMB_PARTY ? (
+        <BombPartyView
+          socket={socket}
+          players={players}
+          gameState={gameState}
+          myId={socket.id}
+          isAdmin={!!isAmAdmin}
+          serverState={serverState}
+          onKick={handleKick}
+          onEditName={() =>
+            (
+              document.getElementById("name_modal") as HTMLDialogElement
+            )?.showModal()
+          }
+          onOpenSettings={() =>
+            (
+              document.getElementById("settings_modal") as HTMLDialogElement
+            )?.showModal()
+          }
+          room={room}
+          password={password}
+        />
+      ) : (
+        <div className="alert alert-error">Unknown Game Mode: {gameMode}</div>
+      )}
 
       {/* Logs & Chat */}
       <div className={`grid grid-cols-1 md:grid-cols-2 gap-4`}>
@@ -792,46 +441,44 @@ export default function GameCanvas({ room }: { room: string }) {
     // Check room status
     fetch(`/parties/main/${room}`)
       .then((res) => {
+        if (res.status === 403) {
+          window.location.href = "/?error=banned"
+          throw new Error("Banned")
+        }
         if (res.ok) return res.json()
         throw new Error("Room not found")
       })
       .then((data: any) => {
         if (data.isPrivate) {
           setNeedsPassword(true)
-        } else {
-          // Public room, just connect
-          setConnectionPassword("")
         }
         setCheckingStatus(false)
       })
-      .catch(() => {
-        // If error (e.g. 404), maybe it's a new room? Just allow connection to try creating it
-        setConnectionPassword("")
-        setCheckingStatus(false)
+      .catch((e) => {
+        if (e.message !== "Banned") {
+          // Room might not exist or be empty, just proceed to join
+          setCheckingStatus(false)
+        }
       })
   }, [room])
 
-  const handlePasswordSubmit = (e: React.FormEvent) => {
-    e.preventDefault()
-    setConnectionPassword(passwordInput)
-    setNeedsPassword(false) // Trigger connection
-  }
-
   if (isBlocked) {
     return (
-      <div className="container mx-auto p-4 flex items-center justify-center min-h-screen">
-        <div className="card bg-base-100 shadow-xl p-8 text-center max-w-md">
-          <h2 className="text-2xl font-bold mb-4">Multiple Tabs Detected</h2>
-          <p className="mb-6">You are already active in another game tab.</p>
-          <p className="mb-6 opacity-70">
-            Please close this tab or the other one to continue.
-          </p>
-          <button
-            onClick={() => (window.location.href = "/")}
-            className="btn btn-primary"
-          >
-            Back to Lobby
-          </button>
+      <div className="container mx-auto p-4 text-center">
+        <div className="alert alert-warning shadow-lg max-w-md mx-auto mt-10">
+          <div>
+            <h3 className="font-bold">Multiple Tabs Detected</h3>
+            <div className="text-xs">
+              You already have this game open in another tab. Please use that
+              tab to play.
+            </div>
+            <button
+              className="btn btn-sm btn-ghost mt-2"
+              onClick={() => window.location.reload()}
+            >
+              Reload
+            </button>
+          </div>
         </div>
       </div>
     )
@@ -839,36 +486,40 @@ export default function GameCanvas({ room }: { room: string }) {
 
   if (checkingStatus) {
     return (
-      <div className="container mx-auto p-4 flex items-center justify-center min-h-screen">
-        <div className="loading loading-spinner loading-lg"></div>
+      <div className="w-full h-screen flex items-center justify-center">
+        <span className="loading loading-spinner loading-lg"></span>
       </div>
     )
   }
 
-  if (needsPassword) {
+  if (needsPassword && !connectionPassword) {
     return (
-      <div className="container mx-auto p-4 flex items-center justify-center min-h-screen">
-        <div className="card bg-base-100 shadow-xl p-8 text-center max-w-sm w-full">
-          <h2 className="text-2xl font-bold mb-2">Private Room</h2>
-          <p className="mb-6 opacity-70">This room requires a password.</p>
-          <form onSubmit={handlePasswordSubmit} className="flex flex-col gap-4">
+      <div className="container mx-auto p-4 flex flex-col gap-6 max-w-md mt-10">
+        <div className="card bg-base-100 shadow-xl p-6 text-center border border-base-300">
+          <Logo name={room} random={false} />
+          <p className="mt-4 mb-2">This room is private.</p>
+          <form
+            onSubmit={(e) => {
+              e.preventDefault()
+              if (passwordInput) setConnectionPassword(passwordInput)
+            }}
+            className="flex flex-col gap-2"
+          >
             <input
               type="password"
+              placeholder="Enter Password"
+              className="input input-bordered w-full text-center"
               value={passwordInput}
               onChange={(e) => setPasswordInput(e.target.value)}
-              placeholder="Enter Password"
-              className="input input-bordered w-full"
+              autoFocus
             />
             <button type="submit" className="btn btn-primary w-full">
-              Join
+              Join Room
             </button>
           </form>
-          <button
-            onClick={() => (window.location.href = "/")}
-            className="btn btn-ghost w-full mt-2"
-          >
-            Cancel
-          </button>
+          <a href="/" className="btn btn-ghost btn-sm mt-4">
+            Back to Lobby
+          </a>
         </div>
       </div>
     )

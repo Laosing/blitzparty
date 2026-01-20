@@ -1,7 +1,7 @@
 import { useState, useEffect } from "react"
 import usePartySocket from "partysocket/react"
 import { Logo } from "./Logo"
-import { ServerMessageType } from "../../shared/types"
+import { ServerMessageType, GameMode } from "../../shared/types"
 
 export default function LobbyView() {
   const [availableRooms, setAvailableRooms] = useState<
@@ -9,6 +9,9 @@ export default function LobbyView() {
   >([])
   const [newRoomName, setNewRoomName] = useState("")
   const [roomPassword, setRoomPassword] = useState("")
+  const [selectedMode, setSelectedMode] = useState<GameMode>(
+    GameMode.BOMB_PARTY,
+  )
   const [errorMsg, setErrorMsg] = useState<string | null>(null)
 
   useEffect(() => {
@@ -39,16 +42,17 @@ export default function LobbyView() {
     },
   })
 
-  const joinRoom = (room: string, password?: string) => {
+  const joinRoom = (room: string, password?: string, mode?: GameMode) => {
     let url = `/?room=${room}`
     if (password) url += `&password=${encodeURIComponent(password)}`
+    if (mode) url += `&mode=${encodeURIComponent(mode)}`
     window.location.href = url
   }
 
   const handleCreate = (e: React.FormEvent) => {
     e.preventDefault()
     if (!newRoomName.trim()) return
-    joinRoom(newRoomName, roomPassword)
+    joinRoom(newRoomName, roomPassword, selectedMode)
   }
 
   return (
@@ -105,6 +109,22 @@ export default function LobbyView() {
             Create
           </button>
         </form>
+
+        <div className="flex justify-center mb-8">
+          <div className="form-control w-full max-w-xs">
+            <label className="label">
+              <span className="label-text">Game Mode</span>
+            </label>
+            <select
+              className="select select-bordered"
+              value={selectedMode}
+              onChange={(e) => setSelectedMode(e.target.value as GameMode)}
+            >
+              <option value={GameMode.BOMB_PARTY}>Bomb Party</option>
+              {/* Future modes can be added here */}
+            </select>
+          </div>
+        </div>
 
         <div className="text-left w-full">
           <h3 className="text-xl font-bold mb-4">
