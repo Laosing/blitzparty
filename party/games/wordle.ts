@@ -30,7 +30,7 @@ export class WordleGame extends BaseGame {
     super(server)
   }
 
-  onStart(): void {
+  onStart(reuseWord: boolean = false): void {
     if (this.players.size < 1) return
     if (!this.server.dictionaryReady) {
       this.broadcast({
@@ -49,15 +49,17 @@ export class WordleGame extends BaseGame {
     }
 
     // Pick target word
-    try {
-      this.targetWord = this.server.dictionary.getRandomWord(5)
-    } catch (e) {
-      this.broadcast({
-        type: ServerMessageType.ERROR,
-        message: "Failed to pick word",
-      })
-      this.endGame()
-      return
+    if (!reuseWord || !this.targetWord) {
+      try {
+        this.targetWord = this.server.dictionary.getRandomWord(5)
+      } catch (e) {
+        this.broadcast({
+          type: ServerMessageType.ERROR,
+          message: "Failed to pick word",
+        })
+        this.endGame()
+        return
+      }
     }
 
     this.startLoop()
@@ -79,7 +81,7 @@ export class WordleGame extends BaseGame {
             (this.server.gameState === GameState.LOBBY ||
               this.server.gameState === GameState.ENDED)
           ) {
-            this.onStart()
+            this.onStart(data.reuseWord)
           }
           break
         case WordleClientMessageType.STOP_GAME:

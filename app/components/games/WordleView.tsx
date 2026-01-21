@@ -419,18 +419,34 @@ export default function WordleView({
                   <div className="text-xl">No winner this time!</div>
                 )}
                 {isAdmin && (
-                  <button
-                    onClick={() =>
-                      socket.send(
-                        JSON.stringify({
-                          type: WordleClientMessageType.START_GAME,
-                        }),
-                      )
-                    }
-                    className="btn btn-primary btn-lg mt-6"
-                  >
-                    Play Again
-                  </button>
+                  <div className="flex flex-col sm:flex-row gap-4 justify-center mt-6">
+                    <button
+                      onClick={() =>
+                        socket.send(
+                          JSON.stringify({
+                            type: WordleClientMessageType.START_GAME,
+                            reuseWord: true,
+                          }),
+                        )
+                      }
+                      className="btn btn-neutral btn-lg"
+                    >
+                      Retry Same Word
+                    </button>
+                    <button
+                      onClick={() =>
+                        socket.send(
+                          JSON.stringify({
+                            type: WordleClientMessageType.START_GAME,
+                            reuseWord: false,
+                          }),
+                        )
+                      }
+                      className="btn btn-primary btn-lg"
+                    >
+                      New Word
+                    </button>
+                  </div>
                 )}
               </div>
             )}

@@ -130,7 +130,7 @@ export type GlobalClientMessage =
     }
 
 export type WordleClientMessage =
-  | { type: WordleClientMessageType.START_GAME }
+  | { type: WordleClientMessageType.START_GAME; reuseWord?: boolean }
   | { type: WordleClientMessageType.STOP_GAME }
   | { type: WordleClientMessageType.SUBMIT_WORD; word: string }
   | { type: WordleClientMessageType.UPDATE_TYPING; text: string }
