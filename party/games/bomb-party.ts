@@ -299,7 +299,7 @@ export class BombPartyGame extends BaseGame {
     const reactionTime = Date.now() - this.turnStartTime
     if (reactionTime < 50) {
       const p = this.players.get(playerId)
-      this.sendTo(playerId, {
+      this.broadcast({
         type: ServerMessageType.ERROR,
         message: `Too fast, ${p?.name || "Player"}! Are you a bot?`,
       })
@@ -311,7 +311,6 @@ export class BombPartyGame extends BaseGame {
       this.broadcast({
         type: ServerMessageType.ERROR,
         message: "Word already used!",
-        hide: true,
       })
       return
     }
@@ -330,7 +329,7 @@ export class BombPartyGame extends BaseGame {
         if (p.usedLetters.length === 26) {
           p.lives++
           p.usedLetters = []
-          this.sendTo(playerId, {
+          this.broadcast({
             type: ServerMessageType.BONUS,
             message: `Alphabet Complete! ${p.name} gains a life!`,
           })

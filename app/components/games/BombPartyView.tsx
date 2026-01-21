@@ -97,7 +97,7 @@ export default function BombPartyView({
           setActivePlayerInput(data.text)
         }
       }
-      if (data.type === ServerMessageType.ERROR && !data.hide) {
+      if (data.type === ServerMessageType.ERROR) {
         setTempError(data.message)
         setTimeout(() => setTempError(null), 1000)
       }
