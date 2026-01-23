@@ -1,197 +1,147 @@
-import initSqlJs from "sql.js"
-import sqlWasm from "./sql-wasm.wasm"
 import { createLogger } from "../shared/logger"
 
 const logger = createLogger("Dictionary")
 
+// Shared memory across all room instances (Singleton Pattern)
+// This saves ~40MB RAM per additional room on the same worker
+let SHARED_WORDS: string[] = []
+let SHARED_WORD_SET: Set<string> = new Set()
+let LOADING_PROMISE: Promise<void> | null = null
+
 export class DictionaryManager {
-  private db: any = null
   public ready: Promise<void>
-  private _resolveReady!: () => void
-  private _isLoaded = false
 
   constructor() {
-    this.ready = new Promise((resolve) => {
-      this._resolveReady = resolve
-    })
+    // If already loaded, we are ready immediately
+    if (SHARED_WORDS.length > 0) {
+      this.ready = Promise.resolve()
+    } else if (LOADING_PROMISE) {
+      this.ready = LOADING_PROMISE
+    } else {
+      // We'll initialize lazily in load(), but exposing a promise here is tricky without starting load.
+      // Ideally, the server calls load() explicitly.
+      this.ready = Promise.resolve()
+    }
   }
 
   async load(origin: string): Promise<{ success: boolean; error?: string }> {
-    if (this._isLoaded) return { success: true } // Already loaded (or attempted and succeeded)
-    // If we failed before, maybe we allow retry? For now, simple.
+    if (SHARED_WORDS.length > 0) return { success: true }
 
-    // Check if we already have db (in case this._isLoaded was confused)
-    if (this.db) return { success: true }
+    // If another room is already loading it, wait for that one
+    if (LOADING_PROMISE) {
+      await LOADING_PROMISE
+      return { success: true }
+    }
 
-    logger.info("Loading Dictionary from SQLite...")
+    logger.info("Loading Dictionary (compressed)...")
+
+    // Start loading and cache the promise so others wait
+    LOADING_PROMISE = (async () => {
+      try {
+        const dictUrl = new URL("/dictionary.txt.gz", origin).toString()
+        const res = await fetch(dictUrl)
+        if (!res.ok) throw new Error(`Fetch failed: ${res.status}`)
+
+        let text = ""
+        if (res.body && typeof DecompressionStream !== "undefined") {
+          const ds = new DecompressionStream("gzip")
+          const decompressed = res.body.pipeThrough(ds)
+          text = await new Response(decompressed).text()
+        } else {
+          text = await res.text()
+        }
+
+        SHARED_WORDS = text
+          .split("\n")
+          .map((w) => w.trim().toUpperCase())
+          .filter((w) => w.length > 0)
+        SHARED_WORD_SET = new Set(SHARED_WORDS)
+
+        logger.info(`Dictionary loaded. ${SHARED_WORDS.length} words.`)
+      } catch (e: any) {
+        logger.error("Failed to load dictionary", e)
+        LOADING_PROMISE = null // Reset so we can retry
+        throw e
+      }
+    })()
 
     try {
-      const dbUrl = new URL("/dictionary.bin", origin).toString()
-
-      const dbRes = await fetch(dbUrl)
-      if (!dbRes.ok) throw new Error(`Fetch failed: ${dbRes.status}`)
-
-      const dbBinary = await dbRes.arrayBuffer()
-
-      const SQL = await initSqlJs({
-        instantiateWasm: (imports, successCallback) => {
-          WebAssembly.instantiate(sqlWasm, imports)
-            .then((result) => {
-              // If result has 'instance' property, it was from buffer. If not, it's likely the Instance itself (from Module).
-              // @ts-ignore
-              const instance = result.instance || result
-              successCallback(instance)
-            })
-            .catch((e) => logger.error("WASM instantiation failed:", e))
-          return {}
-        },
-      })
-
-      this.db = new SQL.Database(new Uint8Array(dbBinary))
-      logger.info(
-        "SQL DB Loaded. Tables:" +
-          JSON.stringify(
-            this.db.exec(
-              "SELECT name FROM sqlite_master WHERE type='table'",
-            )[0],
-          ),
-      )
-      this._isLoaded = true
-      this._resolveReady()
+      await LOADING_PROMISE
       return { success: true }
     } catch (e: any) {
-      logger.error("Failed to load dictionary DB", e)
-      return { success: false, error: e.message || String(e) }
+      return { success: false, error: e.message }
     }
   }
 
   isValid(word: string, syllable: string): { valid: boolean; reason?: string } {
-    if (!this.db) return { valid: false, reason: "Dictionary loading..." }
+    if (SHARED_WORDS.length === 0)
+      return { valid: false, reason: "Dictionary loading..." }
 
-    const normalizedWord = word.toLowerCase().trim()
-    const normalizedSyllable = syllable.toLowerCase().trim()
+    const normalizedWord = word.trim().toUpperCase()
+    const normalizedSyllable = syllable.trim().toUpperCase()
 
     if (!normalizedWord.includes(normalizedSyllable)) {
       return { valid: false, reason: "Missing the letters above" }
     }
 
-    try {
-      const stmt = this.db.prepare(
-        "SELECT count(*) FROM English WHERE word = $word COLLATE NOCASE",
-      )
-      stmt.bind({ $word: normalizedWord })
-
-      let valid = false
-      if (stmt.step()) {
-        const count = stmt.get()[0]
-        if (count > 0) valid = true
-      }
-      stmt.free()
-
-      if (!valid) return { valid: false, reason: "Not in my dictionary" }
-      return { valid: true }
-    } catch (e: any) {
-      logger.error("SQL Error in isValid", e)
-      // Try to list tables to debug
-      try {
-        const tables = this.db.exec(
-          "SELECT name FROM sqlite_master WHERE type='table'",
-        )
-        logger.info("Current tables: " + JSON.stringify(tables))
-      } catch (err) {
-        logger.error("Failed to list tables during error handling", err)
-      }
-      return { valid: false, reason: `Database error: ${e.message || e}` }
+    if (!SHARED_WORD_SET.has(normalizedWord)) {
+      return { valid: false, reason: "Not in my dictionary" }
     }
+
+    return { valid: true }
   }
 
   getRandomSyllable(minWords: number = 50): string {
-    if (!this.db) throw new Error("Dictionary not loaded")
+    if (SHARED_WORDS.length === 0) throw new Error("Dictionary not loaded")
 
     let attempts = 0
-    while (attempts < 20) {
-      try {
-        const stmt = this.db.prepare(
-          "SELECT word FROM English ORDER BY RANDOM() LIMIT 1",
-        )
-        let word = ""
-        if (stmt.step()) {
-          word = stmt.get()[0] as string
+    while (attempts < 50) {
+      const word = SHARED_WORDS[Math.floor(Math.random() * SHARED_WORDS.length)]
+      if (!word || word.length < 3) continue
+
+      const len = Math.random() < 0.6 ? 2 : 3
+      if (word.length < len) continue
+
+      const start = Math.floor(Math.random() * (word.length - len + 1))
+      const syllable = word.substring(start, start + len)
+
+      let count = 0
+      for (const w of SHARED_WORDS) {
+        if (w.includes(syllable)) {
+          count++
+          if (count >= minWords) break
         }
-        stmt.free()
-
-        if (!word || word.length < 3) continue
-
-        const len = Math.random() < 0.6 ? 2 : 3
-        if (word.length < len) continue
-
-        const start = Math.floor(Math.random() * (word.length - len + 1))
-        const syllable = word.substring(start, start + len)
-
-        const countStmt = this.db.prepare(
-          "SELECT count(*) FROM English WHERE word LIKE $pattern",
-        )
-        countStmt.bind({ $pattern: `%${syllable}%` })
-        let count = 0
-        if (countStmt.step()) {
-          count = countStmt.get()[0] as number
-        }
-        countStmt.free()
-
-        if (count >= minWords) return syllable.toUpperCase()
-        attempts++
-      } catch (err) {
-        logger.error("Random syllable generation error", err)
-        throw new Error("Failed to generate syllable from DB")
       }
+
+      if (count >= minWords) return syllable
+      attempts++
     }
 
-    throw new Error("Failed to generate valid syllable after 20 attempts")
+    return "ING"
   }
 
   getRandomWord(length: number = 5): string {
-    if (!this.db) throw new Error("Dictionary not loaded")
+    if (SHARED_WORDS.length === 0) throw new Error("Dictionary not loaded")
 
     let attempts = 0
-    while (attempts < 20) {
-      try {
-        const stmt = this.db.prepare(
-          "SELECT word FROM English WHERE length(word) = $len ORDER BY RANDOM() LIMIT 1",
-        )
-        stmt.bind({ $len: length })
-        let word = ""
-        if (stmt.step()) {
-          word = stmt.get()[0] as string
-        }
-        stmt.free()
-
-        if (word && /^[a-zA-Z]+$/.test(word)) return word.toUpperCase()
-        attempts++
-      } catch (err) {
-        logger.error("Random word generation error", err)
-        throw new Error("Failed to generate word from DB")
+    while (attempts < 50) {
+      const word = SHARED_WORDS[Math.floor(Math.random() * SHARED_WORDS.length)]
+      if (word.length === length && /^[A-Z]+$/.test(word)) {
+        return word
       }
+      attempts++
     }
+
+    const found = SHARED_WORDS.find(
+      (w) => w.length === length && /^[A-Z]+$/.test(w),
+    )
+    if (found) return found
+
     throw new Error("Failed to find valid word")
   }
 
   isWordValid(word: string): boolean {
-    if (!this.db) return false
-    try {
-      const stmt = this.db.prepare(
-        "SELECT count(*) FROM English WHERE word = $word COLLATE NOCASE",
-      )
-      stmt.bind({ $word: word })
-      let valid = false
-      if (stmt.step()) {
-        const count = stmt.get()[0]
-        if (count > 0) valid = true
-      }
-      stmt.free()
-      return valid
-    } catch (e: any) {
-      logger.error("Error checking isWordValid", e)
-      return false
-    }
+    if (SHARED_WORDS.length === 0) return false
+    return SHARED_WORD_SET.has(word.trim().toUpperCase())
   }
 }
