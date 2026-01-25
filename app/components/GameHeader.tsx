@@ -1,14 +1,8 @@
-import {
-  CopyIcon,
-  DoorIcon,
-  HouseIcon,
-  LeftIcon,
-  LockIcon,
-  SettingsIcon,
-} from "./Icons"
+import { CopyIcon, LeftIcon, LockIcon, SettingsIcon } from "./Icons"
 import { Logo } from "./Logo"
 import { GameState } from "../../shared/types"
 import React from "react"
+import { ThemeController } from "./ThemeController"
 
 interface GameHeaderProps {
   room: string
@@ -55,6 +49,7 @@ export function GameHeader({
               </button>
             )}
           {additionalRightControls}
+          <ThemeController />
         </div>
       </div>
 
@@ -64,7 +59,7 @@ export function GameHeader({
           onClick={() => navigator.clipboard.writeText(window.location.href)}
           title="Copy room link"
         >
-          <HouseIcon />
+          <CopyIcon />
           Room: <span className="tracking-widest">{room.toUpperCase()}</span>
           {password && <LockIcon />}
         </button>

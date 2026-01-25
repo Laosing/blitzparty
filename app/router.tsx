@@ -6,7 +6,7 @@ import {
   Outlet,
   redirect,
 } from "@tanstack/react-router"
-import ThemeController from "./components/ThemeController"
+import { ThemeBackground } from "./components/ThemeController"
 
 // Lazy Components
 const LobbyView = lazy(() => import("./components/LobbyView"))
@@ -18,7 +18,7 @@ const NotFound = lazy(() => import("./components/NotFound"))
 const rootRoute = createRootRoute({
   component: () => (
     <>
-      <ThemeController />
+      <ThemeBackground />
       <div className="relative min-h-screen">
         <Outlet />
       </div>

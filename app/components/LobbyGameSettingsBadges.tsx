@@ -1,11 +1,8 @@
 export function LobbyGameSettingsBadges({ settings }: { settings: string[] }) {
   return (
-    <div className="flex flex-col flex-wrap sm:flex-row gap-2 items-center w-full justify-center">
+    <div className="flex flex-wrap gap-2 items-center w-full justify-center">
       {settings.map((setting) => (
-        <div
-          key={setting}
-          className="badge badge-lg badge-neutral badge-outline badge-sm gap-2"
-        >
+        <div key={setting} className="badge badge-sm badge-outline">
           {setting}
         </div>
       ))}

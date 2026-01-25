@@ -210,9 +210,7 @@ export default function WordleView({
             <div className="flex flex-col items-center gap-1">
               <div className="flex items-center gap-2">
                 {gameState === GameState.ENDED ? (
-                  <span className="badge badge-neutral badge-lg p-3">
-                    Game Over
-                  </span>
+                  <span className="badge badge-lg p-3">Game Over</span>
                 ) : isMyTurn ? (
                   <span className="badge badge-primary badge-lg p-3">
                     Your Turn!
