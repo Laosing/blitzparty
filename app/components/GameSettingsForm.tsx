@@ -57,6 +57,11 @@ export function GameSettingsForm({
             serverState.bonusWordLength ??
             GAME_CONFIG.BOMB_PARTY.BONUS_LENGTH.DEFAULT
           }
+          hardModeStartRound={
+            pendingSettings.hardModeStartRound ??
+            serverState.hardModeStartRound ??
+            GAME_CONFIG.BOMB_PARTY.HARD_MODE_START.DEFAULT
+          }
           chatEnabled={pendingSettings.chatEnabled ?? chatEnabled}
           gameLogEnabled={pendingSettings.gameLogEnabled ?? gameLogEnabled}
           onUpdate={onUpdate}

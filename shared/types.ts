@@ -20,6 +20,7 @@ export const GAME_CONFIG = {
     TIMER: { MIN: 5, MAX: 60, DEFAULT: 10 },
     SYLLABLE_CHANGE: { MIN: 1, MAX: 10, DEFAULT: 2 },
     BONUS_LENGTH: { MIN: 5, MAX: 20, DEFAULT: 11 },
+    HARD_MODE_START: { MIN: 3, MAX: 10, DEFAULT: 5 },
   },
   WORDLE: {
     TIMER: { MIN: 5, MAX: 120, DEFAULT: 60 },
@@ -53,6 +54,11 @@ export const BombPartySettingsSchema = z.object({
     .number()
     .min(GAME_CONFIG.BOMB_PARTY.BONUS_LENGTH.MIN)
     .max(GAME_CONFIG.BOMB_PARTY.BONUS_LENGTH.MAX)
+    .optional(),
+  hardModeStartRound: z
+    .number()
+    .min(GAME_CONFIG.BOMB_PARTY.HARD_MODE_START.MIN)
+    .max(GAME_CONFIG.BOMB_PARTY.HARD_MODE_START.MAX)
     .optional(),
   chatEnabled: z.boolean().optional(),
   gameLogEnabled: z.boolean().optional(),

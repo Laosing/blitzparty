@@ -53,8 +53,7 @@ export default function LobbyView() {
 
   const joinRoom = (room: string, password?: string, mode?: GameMode) => {
     navigate({
-      to: "/$room",
-      params: { room },
+      to: `/${room}`,
       search: { mode, password },
     })
   }

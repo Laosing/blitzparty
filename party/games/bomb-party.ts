@@ -21,7 +21,10 @@ export class BombPartyGame extends BaseGame {
   syllableChangeThreshold: number =
     GAME_CONFIG.BOMB_PARTY.SYLLABLE_CHANGE.DEFAULT
   bonusWordLength: number = GAME_CONFIG.BOMB_PARTY.BONUS_LENGTH.DEFAULT
+  hardModeStartRound: number = GAME_CONFIG.BOMB_PARTY.HARD_MODE_START.DEFAULT
   syllableTurnCount: number = 0
+  round: number = 0 // Track current round
+  playersPlayedInRound: Set<string> = new Set()
 
   turnStartTime: number = 0
 
@@ -48,6 +51,8 @@ export class BombPartyGame extends BaseGame {
     this.usedWords.clear()
     this.server.initialAliveCount = this.players.size
     this.syllableTurnCount = 0
+    this.round = 1
+    this.playersPlayedInRound.clear()
 
     for (const p of this.players.values()) {
       p.lives = this.startingLives
@@ -203,7 +208,25 @@ export class BombPartyGame extends BaseGame {
       this.syllableTurnCount = 0
     }
 
+    if (this.activePlayerId) {
+      if (this.playersPlayedInRound.has(this.activePlayerId)) {
+        this.round++
+        this.playersPlayedInRound.clear()
+      }
+      this.playersPlayedInRound.add(this.activePlayerId)
+    }
+
     this.timer = this.maxTimer
+
+    // HARD MODE: After X rounds, timer is random and shorter!
+    if (this.round > this.hardModeStartRound) {
+      // Random timer between Max/2 and Max
+      const min = Math.floor(this.maxTimer / 2)
+      // Range is the difference between max and min
+      // +1 makes the MaxTimer inclusive
+      this.timer = Math.floor(Math.random() * (this.maxTimer - min + 1)) + min
+    }
+
     this.turnStartTime = Date.now()
 
     this.server.broadcastState()
@@ -301,6 +324,8 @@ export class BombPartyGame extends BaseGame {
                 this.syllableChangeThreshold = settings.syllableChangeThreshold
               if (settings.bonusWordLength !== undefined)
                 this.bonusWordLength = settings.bonusWordLength
+              if (settings.hardModeStartRound !== undefined)
+                this.hardModeStartRound = settings.hardModeStartRound
               if (settings.chatEnabled !== undefined)
                 this.chatEnabled = settings.chatEnabled
               if (settings.gameLogEnabled !== undefined)
@@ -396,9 +421,11 @@ export class BombPartyGame extends BaseGame {
       startingLives: this.startingLives,
       syllableChangeThreshold: this.syllableChangeThreshold,
       bonusWordLength: this.bonusWordLength,
+      hardModeStartRound: this.hardModeStartRound,
       dictionaryLoaded: this.server.dictionaryReady,
       chatEnabled: this.chatEnabled,
       gameLogEnabled: this.gameLogEnabled,
+      round: this.round,
     }
   }
 }

@@ -6,6 +6,7 @@ interface BombPartySettingsProps {
   maxTimer: number
   syllableChangeThreshold: number
   bonusWordLength: number
+  hardModeStartRound: number
   chatEnabled?: boolean
   gameLogEnabled?: boolean
   onUpdate: (settings: any) => void
@@ -16,6 +17,7 @@ export default function BombPartySettings({
   maxTimer,
   syllableChangeThreshold,
   bonusWordLength,
+  hardModeStartRound,
   chatEnabled,
   gameLogEnabled,
   onUpdate,
@@ -73,7 +75,7 @@ export default function BombPartySettings({
       />
 
       <NumberInput
-        label="Bonus Letter Word Length"
+        label="Bonus letter word length"
         value={bonusWordLength}
         min={GAME_CONFIG.BOMB_PARTY.BONUS_LENGTH.MIN}
         max={GAME_CONFIG.BOMB_PARTY.BONUS_LENGTH.MAX}
@@ -83,6 +85,20 @@ export default function BombPartySettings({
           })
         }
         helperText={`Length between ${GAME_CONFIG.BOMB_PARTY.BONUS_LENGTH.MIN} and ${GAME_CONFIG.BOMB_PARTY.BONUS_LENGTH.MAX}. Determines word length required to earn a free letter.`}
+      />
+
+      <NumberInput
+        label="Hard Mode after number of rounds"
+        value={hardModeStartRound}
+        min={GAME_CONFIG.BOMB_PARTY.HARD_MODE_START.MIN}
+        max={GAME_CONFIG.BOMB_PARTY.HARD_MODE_START.MAX}
+        onChange={(val) =>
+          onUpdate({
+            hardModeStartRound:
+              val || GAME_CONFIG.BOMB_PARTY.HARD_MODE_START.DEFAULT,
+          })
+        }
+        helperText={`Value between ${GAME_CONFIG.BOMB_PARTY.HARD_MODE_START.MIN} and ${GAME_CONFIG.BOMB_PARTY.HARD_MODE_START.MAX}. The timer will be randomized after this round.`}
       />
     </>
   )

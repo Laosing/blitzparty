@@ -9,6 +9,7 @@ import {
 import { GameHeader } from "../../GameHeader"
 import { WordHighlight } from "../../WordHighlight"
 import { PlayerCard } from "../../PlayerCard"
+import clsx from "clsx"
 
 const ALPHABET = "abcdefghijklmnopqrstuvwxyz"
 
@@ -53,6 +54,8 @@ export default function BombPartyView({
     syllableChangeThreshold = 2,
     bonusWordLength = 2,
     dictionaryLoaded,
+    round = 1,
+    hardModeStartRound = 5,
   } = serverState
 
   // Sync active player input from server events (passed via specialized prop or handled here?)
@@ -135,7 +138,7 @@ export default function BombPartyView({
             <p className="opacity-70 max-w-md">
               Type a word containing the letters before time runs out!
             </p>
-            <div className="flex flex-col sm:flex-row gap-2 items-center w-full justify-center">
+            <div className="flex flex-col flex-wrap sm:flex-row gap-2 items-center w-full justify-center">
               <div className="badge badge-lg badge-neutral gap-2">
                 Lives: {startingLives}
               </div>
@@ -147,6 +150,9 @@ export default function BombPartyView({
               </div>
               <div className="badge badge-lg badge-neutral gap-2">
                 Bonus letter for: {bonusWordLength}+ characters
+              </div>
+              <div className="badge badge-lg badge-neutral gap-2">
+                Hard mode after: {hardModeStartRound} rounds
               </div>
             </div>
 
@@ -174,6 +180,16 @@ export default function BombPartyView({
 
         {gameState === GameState.PLAYING && (
           <div>
+            <div className="flex justify-center items-center gap-4 mb-2">
+              <div
+                className={clsx(
+                  "badge badge-md font-bold",
+                  round > hardModeStartRound && "badge-warning",
+                )}
+              >
+                Round {round}
+              </div>
+            </div>
             <div className="my-1 flex w-full justify-center gap-0.5 flex-wrap px-2">
               {[...ALPHABET].map((letter) => {
                 const me = players.find((p) => p.id === socket.id)
@@ -196,7 +212,7 @@ export default function BombPartyView({
                 )
               })}
             </div>
-            <div className="text-6xl font-black text-secondary uppercase my-6 animate-pulse tracking-widest">
+            <div className="text-6xl font-bold text-primary uppercase my-6 tracking-widest">
               {currentSyllable}
             </div>
 

@@ -37,7 +37,6 @@ const indexRoute = createRoute({
   path: "/",
   validateSearch: (search: Record<string, unknown>) => ({
     error: search.error as string | undefined,
-    room: search.room as string | undefined,
   }),
   component: () => (
     <Suspense
@@ -69,7 +68,7 @@ const gameRoute = createRoute({
       if (res.status === 403) {
         throw redirect({
           to: "/",
-          search: { error: "banned", room: undefined },
+          search: { error: "banned" },
         })
       }
       if (!res.ok) return null
