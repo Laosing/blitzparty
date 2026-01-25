@@ -8,6 +8,7 @@ import { ChatBox } from "./ChatBox"
 import { registerGameModals } from "./GameModals"
 import { ErrorBoundary } from "./ErrorBoundary"
 import { ModalFactory, useModalStore } from "../services/ModalFactory"
+import { ErrorCard } from "./ErrorCard"
 
 // Register modals once
 registerGameModals()
@@ -80,23 +81,11 @@ export default function GameCanvas({
 
   if (isBlockedMultiTab) {
     return (
-      <div className="container mx-auto p-4 text-center">
-        <div className="alert alert-warning shadow-lg max-w-md mx-auto mt-10">
-          <div>
-            <h3 className="font-bold">Multiple Tabs Detected</h3>
-            <div className="text-xs">
-              You already have this game open in another tab. Please use that
-              tab to play.
-            </div>
-            <button
-              className="btn btn-sm btn-ghost mt-2"
-              onClick={() => window.location.reload()}
-            >
-              Reload
-            </button>
-          </div>
-        </div>
-      </div>
+      <ErrorCard
+        title="Multiple Tabs Detected"
+        message="You already have this game open in another tab. Please use that tab to play."
+        additionalMessage="Error Code: MULTIPLE_TABS"
+      />
     )
   }
 
