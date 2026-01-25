@@ -1,6 +1,6 @@
 import { useEffect, useState, useRef } from "react"
+import { BROADCAST_CHANNEL_NAME } from "../config"
 
-const CHANNEL_NAME = "booombparty_session"
 const PING_MESSAGE = "PING_ACTIVE_SESSION"
 const PONG_MESSAGE = "PONG_ACTIVE_SESSION"
 
@@ -9,7 +9,7 @@ export function useMultiTabPrevention() {
   const channelRef = useRef<BroadcastChannel | null>(null)
 
   useEffect(() => {
-    const channel = new BroadcastChannel(CHANNEL_NAME)
+    const channel = new BroadcastChannel(BROADCAST_CHANNEL_NAME)
     channelRef.current = channel
 
     const handleMessage = (event: MessageEvent) => {

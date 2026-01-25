@@ -12,6 +12,7 @@ import {
   WordleSettingsSchema,
   type Player,
 } from "../../shared/types"
+import { STORAGE_KEYS } from "../config"
 import type PartySocket from "partysocket"
 
 type LogMessage = { message: string; timestamp: number }
@@ -130,7 +131,7 @@ export const useGameStore = create<GameStateHelper>((set, get) => ({
 
   updateName: (name: string) => {
     set({ myName: name })
-    localStorage.setItem("booombparty_username", name)
+    localStorage.setItem(STORAGE_KEYS.USERNAME, name)
     get().socket?.send(
       JSON.stringify({
         type: GlobalClientMessageType.SET_NAME,

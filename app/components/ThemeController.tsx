@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react"
+import { STORAGE_KEYS } from "../config"
 
 const themes = [
   "light",
@@ -100,7 +101,7 @@ export default function ThemeController() {
 
   useEffect(() => {
     // Load saved theme on mount
-    const saved = localStorage.getItem("booombparty_theme")
+    const saved = localStorage.getItem(STORAGE_KEYS.THEME)
     if (saved) {
       setCurrentTheme(saved)
       document.documentElement.setAttribute("data-theme", saved)
@@ -113,7 +114,7 @@ export default function ThemeController() {
   const handleChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
     const val = e.target.value
     setCurrentTheme(val)
-    localStorage.setItem("booombparty_theme", val)
+    localStorage.setItem(STORAGE_KEYS.THEME, val)
     document.documentElement.setAttribute("data-theme", val)
   }
 

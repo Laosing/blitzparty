@@ -39,9 +39,7 @@ export const Logo = ({
       ) : (
         <LogoIcon width={size} height={size} />
       )}
-      {showText && (
-        <h1 className="text-4xl font-bold text-primary">booombparty</h1>
-      )}
+      {showText && <h1 className="text-4xl font-bold text-primary">drewbox</h1>}
     </div>
   )
 }

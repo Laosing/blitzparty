@@ -1,6 +1,6 @@
 {
   "$schema": "https://www.partykit.io/schema.json",
-  "name": "booombparty",
+  "name": "drewbox",
   "main": "party/server.ts",
   "parties": {
     "lobby": "party/lobby.ts"

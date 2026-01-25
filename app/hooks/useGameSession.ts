@@ -3,6 +3,7 @@ import { useEffect, useState, useMemo } from "react"
 import { host } from "../utils"
 import { useGameStore } from "../store/gameStore"
 import { GameMode } from "../../shared/types"
+import { STORAGE_KEYS } from "../config"
 
 export function useGameSession({
   room,
@@ -22,21 +23,21 @@ export function useGameSession({
   // Initialize persistent client ID
   useEffect(() => {
     if (typeof window === "undefined") return
-    let id = localStorage.getItem("booombparty_client_id")
+    let id = localStorage.getItem(STORAGE_KEYS.CLIENT_ID)
     if (!id) {
       id = crypto.randomUUID()
-      localStorage.setItem("booombparty_client_id", id)
+      localStorage.setItem(STORAGE_KEYS.CLIENT_ID, id)
     }
     setClientId(id)
 
-    const name = localStorage.getItem("booombparty_username") || ""
+    const name = localStorage.getItem(STORAGE_KEYS.USERNAME) || ""
     if (name) setMyName(name)
   }, [])
 
   // Keep initialName stable to prevent socket reconnect
   const [initialName] = useState(() => {
     if (typeof window !== "undefined") {
-      return localStorage.getItem("booombparty_username") || ""
+      return localStorage.getItem(STORAGE_KEYS.USERNAME) || ""
     }
     return ""
   })
