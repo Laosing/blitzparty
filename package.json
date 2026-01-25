@@ -10,7 +10,10 @@
     "compress:dict": "gzip -c resources/dictionary.txt > public/dictionary.txt.gz",
     "build": "pnpm run compress:dict && vite build",
     "deploy": "pnpm run build && partykit deploy",
-    "test": "vitest"
+    "test": "pnpm run test:all",
+    "test:all": "vitest run",
+    "test:client": "vitest run --exclude test/party --exclude party",
+    "test:server": "vitest run test/party party"
   },
   "dependencies": {
     "@tailwindcss/vite": "^4.1.18",

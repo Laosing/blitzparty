@@ -229,13 +229,8 @@ export default function WordleView({
             </div>
 
             {/* Game Grid */}
-            <div
-              className="flex flex-col gap-2 mb-4 cursor-text"
-              onClick={() => {
-                if (isMyTurn && gameState === GameState.PLAYING)
-                  inputRef.current?.focus()
-              }}
-            >
+            {/* Game Grid */}
+            <div className="flex flex-col gap-2 mb-4 relative">
               {/* Previous Guesses */}
               {visibleGuesses.map((g: Guess, i: number) => (
                 <div key={i} className="flex gap-2">
@@ -264,45 +259,69 @@ export default function WordleView({
 
               {/* Current Input Row (Only when playing) */}
               {gameState === GameState.PLAYING && (
-                <div className="flex gap-2">
-                  {Array.from({ length: wordLength }).map((_, i) => {
-                    const char = (isMyTurn ? input : activePlayerInput)[i]
-                    return (
-                      <div
-                        key={i}
-                        className={clsx(
-                          "w-10 h-10 md:w-12 md:h-12 flex items-center justify-center font-bold text-xl border-2 bg-base-100 uppercase transition-colors",
-                          char ? "border-base-content/50" : "border-base-200",
-                          isMyTurn ? "border-primary/50" : "",
-                        )}
-                      >
-                        {char}
-                      </div>
-                    )
-                  })}
-                  <div className="flex items-center ml-2 text-xs opacity-50 w-20">
-                    {activePlayer?.name || "..."}
+                <>
+                  <div className="flex gap-2">
+                    {Array.from({ length: wordLength }).map((_, i) => {
+                      const char = (isMyTurn ? input : activePlayerInput)[i]
+                      return (
+                        <div
+                          key={i}
+                          className={clsx(
+                            "w-10 h-10 md:w-12 md:h-12 flex items-center justify-center font-bold text-xl border-2 bg-base-100 uppercase transition-colors",
+                            char ? "border-base-content/50" : "border-base-200",
+                            isMyTurn ? "border-primary/50" : "",
+                          )}
+                        >
+                          {char}
+                        </div>
+                      )
+                    })}
+                    <div className="flex items-center ml-2 text-xs opacity-50 w-20">
+                      {activePlayer?.name || "..."}
+                    </div>
                   </div>
-                </div>
+
+                  <form
+                    onSubmit={handleSubmit}
+                    className="absolute inset-0 w-full h-full z-10"
+                  >
+                    <input
+                      ref={inputRef}
+                      value={input}
+                      onChange={(e) => isMyTurn && handleTyping(e.target.value)}
+                      onClick={(e) => {
+                        const target = e.target as HTMLInputElement
+                        target.setSelectionRange(
+                          target.value.length,
+                          target.value.length,
+                        )
+                      }}
+                      onFocus={(e) => {
+                        const target = e.target as HTMLInputElement
+                        setTimeout(() => {
+                          target.setSelectionRange(
+                            target.value.length,
+                            target.value.length,
+                          )
+                        }, 10)
+                      }}
+                      autoFocus={isMyTurn}
+                      maxLength={wordLength}
+                      autoComplete="off"
+                      autoCorrect="off"
+                      autoCapitalize="off"
+                      spellCheck={false}
+                      className="w-full h-full opacity-0 cursor-default bg-transparent text-[16px]"
+                      style={{
+                        caretColor: "transparent",
+                        color: "transparent",
+                      }}
+                    />
+                    <button type="submit" className="hidden" />
+                  </form>
+                </>
               )}
             </div>
-
-            {/* Hidden Input */}
-            {gameState === GameState.PLAYING && (
-              <form
-                onSubmit={handleSubmit}
-                className="absolute opacity-0 w-0 h-0 overflow-hidden"
-              >
-                <input
-                  ref={inputRef}
-                  value={input}
-                  onChange={(e) => isMyTurn && handleTyping(e.target.value)}
-                  autoFocus={isMyTurn}
-                  maxLength={wordLength}
-                />
-                <button type="submit">Submit</button>
-              </form>
-            )}
 
             <div className="text-error h-6 text-sm font-bold min-h-[1.5rem]">
               {tempError}
@@ -326,9 +345,10 @@ export default function WordleView({
                         onClick={() => {
                           if (isMyTurn && input.length < wordLength) {
                             handleTyping(input + key)
-                            inputRef.current?.focus()
+                            // inputRef.current?.focus() // Removed to prevent virtual keyboard popup on mobile
                           }
                         }}
+                        onMouseDown={(e) => e.preventDefault()} // Prevent focus loss on desktop
                         className={clsx(
                           "btn btn-xs md:btn-sm w-8 md:w-10 font-bold",
                           status === "correct" && "btn-success",
@@ -346,9 +366,10 @@ export default function WordleView({
                       onClick={() => {
                         if (isMyTurn) {
                           handleTyping(input.slice(0, -1))
-                          inputRef.current?.focus()
+                          // inputRef.current?.focus()
                         }
                       }}
+                      onMouseDown={(e) => e.preventDefault()}
                       className="btn btn-xs md:btn-sm px-2 md:px-4"
                     >
                       ⌫
@@ -360,6 +381,7 @@ export default function WordleView({
                         e.preventDefault()
                         if (isMyTurn) handleSubmit(e as any)
                       }}
+                      onMouseDown={(e) => e.preventDefault()}
                       className="btn btn-xs md:btn-sm btn-primary px-2 md:px-4"
                     >
                       Enter
