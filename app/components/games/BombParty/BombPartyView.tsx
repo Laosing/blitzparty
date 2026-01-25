@@ -56,6 +56,7 @@ export default function BombPartyView({
     dictionaryLoaded,
     round = 1,
     hardModeStartRound = 5,
+    winnerId,
   } = serverState
 
   // Sync active player input from server events (passed via specialized prop or handled here?)
@@ -272,7 +273,31 @@ export default function BombPartyView({
         {gameState === GameState.ENDED && (
           <div className="py-8">
             <h2 className="text-4xl font-bold mb-4">Game Over!</h2>
-            <p>Returning to lobby...</p>
+            {winnerId ? (
+              <div className="text-xl">
+                Winner:{" "}
+                <span className="font-bold">
+                  {players.find((p) => p.id === winnerId)?.name}
+                </span>
+              </div>
+            ) : (
+              <div className="text-xl">No winner this time!</div>
+            )}
+
+            {isAdmin && (
+              <button
+                onClick={() =>
+                  socket.send(
+                    JSON.stringify({
+                      type: BombPartyClientMessageType.RESET_GAME,
+                    }),
+                  )
+                }
+                className="btn btn-primary btn-lg mt-8"
+              >
+                Play Again
+              </button>
+            )}
           </div>
         )}
       </GameHeader>

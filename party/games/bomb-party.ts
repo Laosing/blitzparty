@@ -25,6 +25,7 @@ export class BombPartyGame extends BaseGame {
   syllableTurnCount: number = 0
   round: number = 0 // Track current round
   playersPlayedInRound: Set<string> = new Set()
+  winnerId: string | null = null
 
   turnStartTime: number = 0
 
@@ -53,6 +54,7 @@ export class BombPartyGame extends BaseGame {
     this.syllableTurnCount = 0
     this.round = 1
     this.playersPlayedInRound.clear()
+    this.winnerId = null
 
     for (const p of this.players.values()) {
       p.lives = this.startingLives
@@ -248,6 +250,7 @@ export class BombPartyGame extends BaseGame {
 
   endGame(winnerId?: string | null) {
     this.server.gameState = GameState.ENDED
+    this.winnerId = winnerId || null
     if (this.tickInterval) clearTimeout(this.tickInterval)
     this.broadcast({ type: ServerMessageType.GAME_OVER, winnerId })
 
@@ -258,7 +261,6 @@ export class BombPartyGame extends BaseGame {
       }
     }
 
-    this.server.gameState = GameState.LOBBY
     this.server.broadcastState()
   }
 
@@ -275,6 +277,19 @@ export class BombPartyGame extends BaseGame {
             this.players.size > 0
           ) {
             this.onStart()
+          }
+          break
+        case BombPartyClientMessageType.RESET_GAME:
+          if (
+            senderPlayer?.isAdmin &&
+            this.server.gameState === GameState.ENDED
+          ) {
+            this.server.gameState = GameState.LOBBY
+            this.broadcast({
+              type: ServerMessageType.SYSTEM_MESSAGE,
+              message: "Game reset to lobby!",
+            })
+            this.server.broadcastState()
           }
           break
         case BombPartyClientMessageType.STOP_GAME:
@@ -426,6 +441,7 @@ export class BombPartyGame extends BaseGame {
       chatEnabled: this.chatEnabled,
       gameLogEnabled: this.gameLogEnabled,
       round: this.round,
+      winnerId: this.winnerId,
     }
   }
 }

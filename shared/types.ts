@@ -155,6 +155,7 @@ export enum WordleClientMessageType {
 export enum BombPartyClientMessageType {
   START_GAME = "BP_START_GAME",
   STOP_GAME = "BP_STOP_GAME",
+  RESET_GAME = "BP_RESET_GAME",
   SUBMIT_WORD = "BP_SUBMIT_WORD",
   UPDATE_TYPING = "BP_UPDATE_TYPING",
   UPDATE_SETTINGS = "BP_UPDATE_SETTINGS",
@@ -187,6 +188,7 @@ export type WordleClientMessage =
 export type BombPartyClientMessage =
   | { type: BombPartyClientMessageType.START_GAME }
   | { type: BombPartyClientMessageType.STOP_GAME }
+  | { type: BombPartyClientMessageType.RESET_GAME }
   | { type: BombPartyClientMessageType.SUBMIT_WORD; word: string }
   | { type: BombPartyClientMessageType.UPDATE_TYPING; text: string }
   | (BombPartySettings & { type: BombPartyClientMessageType.UPDATE_SETTINGS })
