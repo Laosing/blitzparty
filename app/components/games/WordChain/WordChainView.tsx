@@ -11,6 +11,7 @@ import clsx from "clsx"
 import { GameHeader } from "../../GameHeader"
 import PartySocket from "partysocket"
 import { PlayerCard } from "../../PlayerCard"
+import { LobbyGameSettingsBadges } from "../../LobbyGameSettingsBadges"
 
 interface WordChainViewProps {
   socket: PartySocket
@@ -42,7 +43,13 @@ export default function WordChainView({
   const [tempError, setTempError] = useState<string | null>(null)
   const inputRef = useRef<HTMLInputElement>(null)
 
-  const { currentWord = "", activePlayerId, timer, maxTimer } = serverState
+  const {
+    currentWord = "",
+    activePlayerId,
+    timer,
+    maxTimer,
+    startingLives,
+  } = serverState
 
   const isMyTurn = activePlayerId === socket.id
 
@@ -113,7 +120,7 @@ export default function WordChainView({
   }, [input, socket])
 
   return (
-    <div className="flex flex-col gap-6 max-w-2xl mx-auto w-full">
+    <div className="flex flex-col gap-6 max-w-4xl mx-auto w-full">
       {/* Header */}
       <GameHeader
         room={room}
@@ -127,12 +134,16 @@ export default function WordChainView({
         {/* Game Area */}
         <div className="flex flex-col items-center justify-center min-h-[200px] mb-4">
           {gameState === GameState.LOBBY && (
-            <div className="flex flex-col items-center gap-4">
+            <div className="flex flex-col gap-4 items-center py-6">
               <h2 className="text-2xl font-bold">Word Chain</h2>
               <p className="opacity-70 max-w-md">
                 Take turns guessing a word that starts with the last letter of
                 the previous word.
               </p>
+              <LobbyGameSettingsBadges
+                settings={[`Timer: ${maxTimer}s`, `Lives: ${startingLives}`]}
+              />
+
               {isAdmin && players.length > 0 && (
                 <button
                   className="btn btn-primary btn-lg mt-4"
@@ -249,25 +260,20 @@ export default function WordChainView({
       </GameHeader>
 
       {/* Player List */}
-      <div className="card bg-base-100 shadow-xl p-4 md:p-6 border border-base-300">
-        <h3 className="font-bold text-center mb-4 opacity-70">
-          PLAYERS ({players.length})
-        </h3>
-        <div className="grid grid-cols-2 md:grid-cols-3 gap-2">
-          {players.map((p) => (
-            <PlayerCard
-              key={p.id}
-              player={p}
-              isMe={p.id === socket.id}
-              isAdmin={isAdmin}
-              isActive={
-                gameState === GameState.PLAYING && p.id === activePlayerId
-              }
-              onKick={onKick}
-              onEditName={onEditName}
-            />
-          ))}
-        </div>
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
+        {players.map((p) => (
+          <PlayerCard
+            key={p.id}
+            player={p}
+            isMe={p.id === socket.id}
+            isAdmin={isAdmin}
+            isActive={
+              gameState === GameState.PLAYING && p.id === activePlayerId
+            }
+            onKick={onKick}
+            onEditName={onEditName}
+          />
+        ))}
       </div>
     </div>
   )

@@ -11,6 +11,7 @@ import { GameHeader } from "../../GameHeader"
 import { WordHighlight } from "../../WordHighlight"
 import { PlayerCard } from "../../PlayerCard"
 import clsx from "clsx"
+import { LobbyGameSettingsBadges } from "../../LobbyGameSettingsBadges"
 
 const ALPHABET = "abcdefghijklmnopqrstuvwxyz"
 
@@ -135,28 +136,20 @@ export default function BombPartyView({
         onOpenSettings={onOpenSettings}
       >
         {gameState === GameState.LOBBY && (
-          <div className="flex flex-col gap-4 items-center">
+          <div className="flex flex-col gap-4 items-center py-6">
             <h2 className="text-2xl font-bold">Bombparty</h2>
             <p className="opacity-70 max-w-md">
               Type a word containing the letters before time runs out!
             </p>
-            <div className="flex flex-col flex-wrap sm:flex-row gap-2 items-center w-full justify-center">
-              <div className="badge badge-lg badge-neutral gap-2">
-                Lives: {startingLives}
-              </div>
-              <div className="badge badge-lg badge-neutral gap-2">
-                Timer: {maxTimer}s
-              </div>
-              <div className="badge badge-lg badge-neutral gap-2">
-                Change syllable: {syllableChangeThreshold} tries
-              </div>
-              <div className="badge badge-lg badge-neutral gap-2">
-                Bonus letter for: {bonusWordLength}+ characters
-              </div>
-              <div className="badge badge-lg badge-neutral gap-2">
-                Hard mode after: {hardModeStartRound} rounds
-              </div>
-            </div>
+            <LobbyGameSettingsBadges
+              settings={[
+                `Timer: ${maxTimer}s`,
+                `Lives: ${startingLives}`,
+                `Change syllable after: ${syllableChangeThreshold} tries`,
+                `Bonus letter for: ${bonusWordLength}+ characters`,
+                `Hard mode after: ${hardModeStartRound} rounds`,
+              ]}
+            />
 
             {isAdmin ? (
               <button

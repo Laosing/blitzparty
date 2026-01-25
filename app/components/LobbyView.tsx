@@ -86,7 +86,7 @@ export default function LobbyView() {
 
         <form
           onSubmit={handleCreate}
-          className="my-8 flex flex-col sm:flex-row gap-4 items-center justify-center"
+          className="my-8 flex flex-col sm:flex-row gap-2 items-center justify-center"
         >
           <div className="flex flex-col gap-1 w-full relative">
             <input
@@ -123,28 +123,26 @@ export default function LobbyView() {
 
         <div className="flex justify-center mb-8">
           <div className="form-control w-full max-w-xs">
-            <label className="label">
-              <span className="label-text">Game Mode</span>
-            </label>
-            <select
-              className="select select-bordered w-full"
-              value={selectedMode}
-              onChange={(e) => setSelectedMode(e.target.value as GameMode)}
-            >
-              <option value={GameMode.BOMB_PARTY}>Bombparty</option>
-              <option value={GameMode.WORDLE}>Wordle</option>
-              <option value={GameMode.WORD_CHAIN}>Word Chain</option>
-            </select>
-            <div className="label">
-              <span className="label-text-alt">
+            <fieldset className="fieldset">
+              <legend className="fieldset-legend text-lg">Game Mode</legend>
+              <select
+                className="select select-bordered w-full"
+                value={selectedMode}
+                onChange={(e) => setSelectedMode(e.target.value as GameMode)}
+              >
+                <option value={GameMode.BOMB_PARTY}>Bombparty</option>
+                <option value={GameMode.WORDLE}>Wordle</option>
+                <option value={GameMode.WORD_CHAIN}>Word Chain</option>
+              </select>
+              <p className="label justify-center">
                 {selectedMode === GameMode.BOMB_PARTY &&
                   "Fast-paced word association game"}
                 {selectedMode === GameMode.WORDLE &&
                   "Multiplayer cooperative word guessing"}
                 {selectedMode === GameMode.WORD_CHAIN &&
                   "Strategic last-letter word builder"}
-              </span>
-            </div>
+              </p>
+            </fieldset>
           </div>
         </div>
 

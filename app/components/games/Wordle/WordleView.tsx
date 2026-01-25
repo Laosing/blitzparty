@@ -12,6 +12,7 @@ import {
 import { GameHeader } from "../../GameHeader"
 import clsx from "clsx"
 import { PlayerCard } from "../../PlayerCard"
+import { LobbyGameSettingsBadges } from "../../LobbyGameSettingsBadges"
 
 interface WordleViewProps {
   socket: PartySocket
@@ -160,6 +161,13 @@ export default function WordleView({
               Take turns guessing the {wordLength}-letter word. Green means
               correct spot, Yellow means wrong spot, Gray means not in word.
             </p>
+            <LobbyGameSettingsBadges
+              settings={[
+                `Timer: ${maxTimer}s`,
+                `Max Attempts: ${maxAttempts}`,
+                `Word Length: ${wordLength}`,
+              ]}
+            />
 
             {isAdmin ? (
               <button

@@ -37,6 +37,17 @@ export default function BombPartySettings({
       />
 
       <NumberInput
+        label="Timer (Seconds)"
+        value={maxTimer}
+        min={GAME_CONFIG.BOMB_PARTY.TIMER.MIN}
+        max={GAME_CONFIG.BOMB_PARTY.TIMER.MAX}
+        onChange={(val) =>
+          onUpdate({ maxTimer: val || GAME_CONFIG.BOMB_PARTY.TIMER.DEFAULT })
+        }
+        helperText={`Value between ${GAME_CONFIG.BOMB_PARTY.TIMER.MIN} and ${GAME_CONFIG.BOMB_PARTY.TIMER.MAX}`}
+      />
+
+      <NumberInput
         label="Starting Lives"
         value={startingLives}
         min={GAME_CONFIG.BOMB_PARTY.LIVES.MIN}
@@ -50,18 +61,7 @@ export default function BombPartySettings({
       />
 
       <NumberInput
-        label="Timer (Seconds)"
-        value={maxTimer}
-        min={GAME_CONFIG.BOMB_PARTY.TIMER.MIN}
-        max={GAME_CONFIG.BOMB_PARTY.TIMER.MAX}
-        onChange={(val) =>
-          onUpdate({ maxTimer: val || GAME_CONFIG.BOMB_PARTY.TIMER.DEFAULT })
-        }
-        helperText={`Value between ${GAME_CONFIG.BOMB_PARTY.TIMER.MIN} and ${GAME_CONFIG.BOMB_PARTY.TIMER.MAX}`}
-      />
-
-      <NumberInput
-        label="Change syllable after number of tries"
+        label="Change syllable after number of failed attempts"
         value={syllableChangeThreshold}
         min={GAME_CONFIG.BOMB_PARTY.SYLLABLE_CHANGE.MIN}
         max={GAME_CONFIG.BOMB_PARTY.SYLLABLE_CHANGE.MAX}
