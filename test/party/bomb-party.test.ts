@@ -68,18 +68,16 @@ describe("Bomb Party Game Logic", () => {
 
     expect(server.gameState).toBe(GameState.LOBBY)
 
-    await server.onMessage(
-      JSON.stringify({
-        type: BombPartyClientMessageType.START_GAME,
-      }),
-      host as any,
-    )
+    // Manual start
+    server.activeGame = new BombPartyGame(server)
+    const game = server.activeGame as BombPartyGame
+    game.requestStartGame("host")
 
     expect(server.gameState).toBe(GameState.PLAYING)
-    expect((server.activeGame as BombPartyGame).activePlayerId).toBeDefined()
-    expect((server.activeGame as BombPartyGame).round).toBe(1)
+    expect(game.activePlayerId).toBeDefined()
+    expect(game.round).toBe(1)
     // Should have started timer
-    expect((server.activeGame as BombPartyGame).timer).toBeGreaterThan(0)
+    expect(game.timer).toBeGreaterThan(0)
   })
 
   it("should handle valid word submission", async () => {
@@ -87,12 +85,11 @@ describe("Bomb Party Game Logic", () => {
     // 1. Setup Game
     const host = await joinPlayer("host")
     await joinPlayer("p2")
-    await server.onMessage(
-      JSON.stringify({ type: BombPartyClientMessageType.START_GAME }),
-      host as any,
-    )
 
+    server.activeGame = new BombPartyGame(server)
     const game = server.activeGame as BombPartyGame
+    game.requestStartGame("host")
+
     const activeId = game.activePlayerId!
     expect(activeId).toBeDefined()
 
@@ -105,13 +102,7 @@ describe("Bomb Party Game Logic", () => {
     vi.advanceTimersByTime(100)
 
     // 2. Submit Valid Word containing "TEST"
-    await server.onMessage(
-      JSON.stringify({
-        type: BombPartyClientMessageType.SUBMIT_WORD,
-        word: "TESTING",
-      }),
-      activeConn as any,
-    )
+    game.submitWord(activeId, "TESTING")
 
     // 3. Verify success
     // Should have moved to next player
@@ -128,24 +119,17 @@ describe("Bomb Party Game Logic", () => {
 
   it("should reject invalid word (missing syllable)", async () => {
     const host = await joinPlayer("host")
-    await server.onMessage(
-      JSON.stringify({ type: BombPartyClientMessageType.START_GAME }),
-      host as any,
-    )
 
+    server.activeGame = new BombPartyGame(server)
     const game = server.activeGame as BombPartyGame
+    game.requestStartGame("host")
+
     const activeId = game.activePlayerId!
     const activeConn = room.connections.get(activeId)!
 
     game.currentSyllable = "ABC" // Syllable
 
-    await server.onMessage(
-      JSON.stringify({
-        type: BombPartyClientMessageType.SUBMIT_WORD,
-        word: "XYZ", // Does not contain ABC
-      }),
-      activeConn as any,
-    )
+    game.submitWord(activeId, "XYZ") // Does not contain ABC
 
     // Should not change turn
     expect(game.activePlayerId).toBe(activeId)
@@ -158,12 +142,10 @@ describe("Bomb Party Game Logic", () => {
   it("should handle explosion (timer expiry)", async () => {
     const host = await joinPlayer("host")
     await joinPlayer("p2") // Add second player so turn can rotate
-    await server.onMessage(
-      JSON.stringify({ type: BombPartyClientMessageType.START_GAME }),
-      host as any,
-    )
 
+    server.activeGame = new BombPartyGame(server)
     const game = server.activeGame as BombPartyGame
+    game.requestStartGame("host")
     const activeId = game.activePlayerId!
     const player = server.players.get(activeId)!
     const initialLives = player.lives
@@ -179,12 +161,10 @@ describe("Bomb Party Game Logic", () => {
   it("should end game when only 1 player remains", async () => {
     const host = await joinPlayer("host")
     await joinPlayer("p2")
-    await server.onMessage(
-      JSON.stringify({ type: BombPartyClientMessageType.START_GAME }),
-      host as any,
-    )
 
+    server.activeGame = new BombPartyGame(server)
     const game = server.activeGame as BombPartyGame
+    game.requestStartGame("host")
 
     // Kill p2
     const p2 = server.players.get("p2")!
@@ -202,12 +182,10 @@ describe("Bomb Party Game Logic", () => {
     vi.useFakeTimers()
     const host = await joinPlayer("host")
     await joinPlayer("p2")
-    await server.onMessage(
-      JSON.stringify({ type: BombPartyClientMessageType.START_GAME }),
-      host as any,
-    )
 
+    server.activeGame = new BombPartyGame(server)
     const game = server.activeGame as BombPartyGame
+    game.requestStartGame("host")
     const activeId = game.activePlayerId!
     const activeConn = room.connections.get(activeId)
     const player = server.players.get(activeId)!
@@ -220,13 +198,7 @@ describe("Bomb Party Game Logic", () => {
     vi.advanceTimersByTime(100)
 
     // Submit "TESTING" (Length 7 > 5)
-    await server.onMessage(
-      JSON.stringify({
-        type: BombPartyClientMessageType.SUBMIT_WORD,
-        word: "TESTING",
-      }),
-      activeConn as any,
-    )
+    game.submitWord(activeId, "TESTING")
 
     // Verify Player got a bonus letter
     expect(player.usedLetters.length).toBeGreaterThan(0)
@@ -241,12 +213,10 @@ describe("Bomb Party Game Logic", () => {
   it("should activate hard mode after X rounds", async () => {
     const host = await joinPlayer("host")
     await joinPlayer("p2")
-    await server.onMessage(
-      JSON.stringify({ type: BombPartyClientMessageType.START_GAME }),
-      host as any,
-    )
 
+    server.activeGame = new BombPartyGame(server)
     const game = server.activeGame as BombPartyGame
+    game.requestStartGame("host")
 
     // Setup Hard Mode start
     game.hardModeStartRound = 3

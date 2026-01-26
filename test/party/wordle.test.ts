@@ -5,12 +5,7 @@ import {
   MockConnection,
   createMockConnectionContext,
 } from "../mocks/party"
-import {
-  GameState,
-  GameMode,
-  WordleClientMessageType,
-  ServerMessageType,
-} from "../../shared/types"
+import { GameState, GameMode, ServerMessageType } from "../../shared/types"
 import { WordleGame } from "../../party/games/wordle"
 
 // Mock DictionaryManager
@@ -53,28 +48,21 @@ describe("Wordle Game Logic", () => {
   }
 
   it("should start game and pick target word", async () => {
-    const host = await joinPlayer("host")
+    await joinPlayer("host")
 
-    await server.onMessage(
-      JSON.stringify({
-        type: WordleClientMessageType.START_GAME,
-      }),
-      host as any,
-    )
+    const game = new WordleGame(server)
+    server.activeGame = game
+    game.requestStartGame("host")
 
     expect(server.gameState).toBe(GameState.PLAYING)
-    const game = server.activeGame as WordleGame
     expect(game.targetWord).toBe("APPLE")
   })
 
   it("should handle valid guesses and updates state", async () => {
-    const host = await joinPlayer("host")
-    await server.onMessage(
-      JSON.stringify({ type: WordleClientMessageType.START_GAME }),
-      host as any,
-    )
-
-    const game = server.activeGame as WordleGame
+    await joinPlayer("host")
+    const game = new WordleGame(server)
+    server.activeGame = game
+    game.requestStartGame("host")
 
     // "ALERT" vs "APPLE"
     // A (correct), L (present), E (present), R (absent), T (absent)
@@ -84,13 +72,7 @@ describe("Wordle Game Logic", () => {
     // L: in APPLE (pos 3), guess (pos 1). Present.
     // E: in APPLE (pos 4), guess (pos 2). Present.
 
-    await server.onMessage(
-      JSON.stringify({
-        type: WordleClientMessageType.SUBMIT_WORD,
-        word: "ALERT",
-      }),
-      host as any,
-    )
+    game.submitWord("host", "ALERT")
 
     expect(game.guesses.length).toBe(1)
     const guess = game.guesses[0]
@@ -102,20 +84,11 @@ describe("Wordle Game Logic", () => {
 
   it("should reject invalid dictionary words", async () => {
     const host = await joinPlayer("host")
-    await server.onMessage(
-      JSON.stringify({ type: WordleClientMessageType.START_GAME }),
-      host as any,
-    )
+    const game = new WordleGame(server)
+    server.activeGame = game
+    game.requestStartGame("host")
 
-    const game = server.activeGame as WordleGame
-
-    await server.onMessage(
-      JSON.stringify({
-        type: WordleClientMessageType.SUBMIT_WORD,
-        word: "ZZZZZ",
-      }),
-      host as any,
-    )
+    game.submitWord("host", "ZZZZZ")
 
     expect(game.guesses.length).toBe(0)
     expect(host.send).toHaveBeenCalledWith(
@@ -124,55 +97,31 @@ describe("Wordle Game Logic", () => {
   })
 
   it("should detect win condition", async () => {
-    const host = await joinPlayer("host")
-    await server.onMessage(
-      JSON.stringify({ type: WordleClientMessageType.START_GAME }),
-      host as any,
-    )
+    await joinPlayer("host")
+    const game = new WordleGame(server)
+    server.activeGame = game
+    game.requestStartGame("host")
 
-    await server.onMessage(
-      JSON.stringify({
-        type: WordleClientMessageType.SUBMIT_WORD,
-        word: "APPLE",
-      }),
-      host as any,
-    )
+    game.submitWord("host", "APPLE")
 
     expect(server.gameState).toBe(GameState.ENDED)
-    expect((server.activeGame as WordleGame).winnerId).toBe("host")
+    expect(game.winnerId).toBe("host")
   })
 
   it("should end game on max attempts", async () => {
-    const host = await joinPlayer("host")
-    await server.onMessage(
-      JSON.stringify({
-        type: WordleClientMessageType.START_GAME,
-      }),
-      host as any,
-    )
-
-    const game = server.activeGame as WordleGame
+    await joinPlayer("host")
+    const game = new WordleGame(server)
+    server.activeGame = game
+    game.requestStartGame("host")
 
     // Consume all attempts (default 5, defined in GAME_CONFIG)
     // We'll update settings to be safe or just loop 5 times
     game.maxAttempts = 2 // Shorten for test
 
-    await server.onMessage(
-      JSON.stringify({
-        type: WordleClientMessageType.SUBMIT_WORD,
-        word: "ABUSE",
-      }),
-      host as any,
-    ) // 1
+    game.submitWord("host", "ABUSE") // 1
     expect(server.gameState).toBe(GameState.PLAYING)
 
-    await server.onMessage(
-      JSON.stringify({
-        type: WordleClientMessageType.SUBMIT_WORD,
-        word: "ADAPT",
-      }),
-      host as any,
-    ) // 2
+    game.submitWord("host", "ADAPT") // 2
 
     expect(server.gameState).toBe(GameState.ENDED)
     expect(game.winnerId).toBeNull()

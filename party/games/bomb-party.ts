@@ -267,91 +267,110 @@ export class BombPartyGame extends BaseGame {
   onMessage(message: string, sender: Party.Connection): void {
     try {
       const data = JSON.parse(message) as BombPartyClientMessage
-      const senderPlayer = this.players.get(sender.id)
 
       switch (data.type) {
         case BombPartyClientMessageType.START_GAME:
-          if (
-            senderPlayer?.isAdmin &&
-            this.server.gameState === GameState.LOBBY &&
-            this.players.size > 0
-          ) {
-            this.onStart()
-          }
+          this.requestStartGame(sender.id)
           break
         case BombPartyClientMessageType.RESET_GAME:
-          if (
-            senderPlayer?.isAdmin &&
-            this.server.gameState === GameState.ENDED
-          ) {
-            this.server.gameState = GameState.LOBBY
-            this.broadcast({
-              type: ServerMessageType.SYSTEM_MESSAGE,
-              message: "Game reset to lobby!",
-            })
-            this.server.broadcastState()
-          }
+          this.requestResetGame(sender.id)
           break
         case BombPartyClientMessageType.STOP_GAME:
-          if (
-            senderPlayer?.isAdmin &&
-            this.server.gameState === GameState.PLAYING
-          ) {
-            this.broadcast({
-              type: ServerMessageType.SYSTEM_MESSAGE,
-              message: "Admin stopped the game!",
-            })
-            this.endGame(null)
-          }
+          this.requestStopGame(sender.id)
           break
         case BombPartyClientMessageType.SUBMIT_WORD:
-          if (
-            this.server.gameState === GameState.PLAYING &&
-            this.activePlayerId === sender.id &&
-            typeof data.word === "string"
-          ) {
-            this.handleWordSubmission(sender.id, data.word)
-          }
+          this.submitWord(sender.id, data.word)
           break
         case BombPartyClientMessageType.UPDATE_TYPING:
-          if (
-            this.server.gameState === GameState.PLAYING &&
-            this.activePlayerId === sender.id &&
-            typeof data.text === "string"
-          ) {
-            this.broadcast({
-              type: ServerMessageType.TYPING_UPDATE,
-              text: data.text,
-              playerId: sender.id,
-            })
-          }
+          this.updateTyping(sender.id, data.text)
           break
         case BombPartyClientMessageType.UPDATE_SETTINGS:
-          if (senderPlayer?.isAdmin) {
-            const result = BombPartySettingsSchema.safeParse(data)
-            if (result.success) {
-              const settings = result.data
-              if (settings.startingLives !== undefined)
-                this.startingLives = settings.startingLives
-              if (settings.maxTimer !== undefined)
-                this.maxTimer = settings.maxTimer
-              if (settings.syllableChangeThreshold !== undefined)
-                this.syllableChangeThreshold = settings.syllableChangeThreshold
-              if (settings.bonusWordLength !== undefined)
-                this.bonusWordLength = settings.bonusWordLength
-              if (settings.hardModeStartRound !== undefined)
-                this.hardModeStartRound = settings.hardModeStartRound
-              if (settings.chatEnabled !== undefined)
-                this.chatEnabled = settings.chatEnabled
-              if (settings.gameLogEnabled !== undefined)
-                this.gameLogEnabled = settings.gameLogEnabled
-              this.server.broadcastState()
-            }
-          }
+          this.updateSettings(sender.id, data)
           break
       }
     } catch (e) {
       console.error("Error in game message", e)
+    }
+  }
+
+  // Public Action Methods
+  public requestStartGame(playerId: string) {
+    const player = this.players.get(playerId)
+    if (
+      player?.isAdmin &&
+      this.server.gameState === GameState.LOBBY &&
+      this.players.size > 0
+    ) {
+      this.onStart()
+    }
+  }
+
+  public requestResetGame(playerId: string) {
+    const player = this.players.get(playerId)
+    if (player?.isAdmin && this.server.gameState === GameState.ENDED) {
+      this.server.gameState = GameState.LOBBY
+      this.broadcast({
+        type: ServerMessageType.SYSTEM_MESSAGE,
+        message: "Game reset to lobby!",
+      })
+      this.server.broadcastState()
+    }
+  }
+
+  public requestStopGame(playerId: string) {
+    const player = this.players.get(playerId)
+    if (player?.isAdmin && this.server.gameState === GameState.PLAYING) {
+      this.broadcast({
+        type: ServerMessageType.SYSTEM_MESSAGE,
+        message: "Admin stopped the game!",
+      })
+      this.endGame(null)
+    }
+  }
+
+  public submitWord(playerId: string, word: string) {
+    if (
+      this.server.gameState === GameState.PLAYING &&
+      this.activePlayerId === playerId &&
+      typeof word === "string"
+    ) {
+      this.handleWordSubmission(playerId, word)
+    }
+  }
+
+  public updateTyping(playerId: string, text: string) {
+    if (
+      this.server.gameState === GameState.PLAYING &&
+      this.activePlayerId === playerId &&
+      typeof text === "string"
+    ) {
+      this.broadcast({
+        type: ServerMessageType.TYPING_UPDATE,
+        text: text,
+        playerId: playerId,
+      })
+    }
+  }
+
+  public updateSettings(playerId: string, settings: any) {
+    const player = this.players.get(playerId)
+    if (!player?.isAdmin) return
+
+    const result = BombPartySettingsSchema.safeParse(settings)
+    if (result.success) {
+      const s = result.data
+      if (s.startingLives !== undefined) this.startingLives = s.startingLives
+      if (s.maxTimer !== undefined) this.maxTimer = s.maxTimer
+      if (s.syllableChangeThreshold !== undefined)
+        this.syllableChangeThreshold = s.syllableChangeThreshold
+      if (s.bonusWordLength !== undefined)
+        this.bonusWordLength = s.bonusWordLength
+      if (s.hardModeStartRound !== undefined)
+        this.hardModeStartRound = s.hardModeStartRound
+      if (s.chatEnabled !== undefined) this.chatEnabled = s.chatEnabled
+      if (s.gameLogEnabled !== undefined) this.gameLogEnabled = s.gameLogEnabled
+
+      this.server.broadcastState()
     }
   }
 

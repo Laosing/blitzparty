@@ -79,64 +79,80 @@ export class WordleGame extends BaseGame {
       const data = JSON.parse(message) as WordleClientMessage // Cast to specific type
       switch (data.type) {
         case WordleClientMessageType.START_GAME:
-          if (
-            this.players.get(sender.id)?.isAdmin &&
-            (this.server.gameState === GameState.LOBBY ||
-              this.server.gameState === GameState.ENDED)
-          ) {
-            this.onStart(data.reuseWord)
-          }
+          this.requestStartGame(sender.id, data.reuseWord)
           break
         case WordleClientMessageType.STOP_GAME:
-          if (
-            this.players.get(sender.id)?.isAdmin &&
-            this.server.gameState === GameState.PLAYING
-          ) {
-            this.endGame()
-          }
+          this.requestStopGame(sender.id)
           break
         case WordleClientMessageType.SUBMIT_WORD:
-          if (
-            this.server.gameState === GameState.PLAYING &&
-            this.activePlayerId === sender.id
-          ) {
-            this.handleGuess(sender.id, data.word)
-          }
+          this.submitWord(sender.id, data.word)
           break
         case WordleClientMessageType.UPDATE_TYPING:
-          if (
-            this.server.gameState === GameState.PLAYING &&
-            this.activePlayerId === sender.id
-          ) {
-            this.broadcast({
-              type: ServerMessageType.TYPING_UPDATE,
-              text: data.text,
-            })
-          }
+          this.updateTyping(sender.id, data.text)
           break
         case WordleClientMessageType.UPDATE_SETTINGS:
-          if (this.players.get(sender.id)?.isAdmin) {
-            const result = WordleSettingsSchema.safeParse(data)
-            if (result.success) {
-              const settings = result.data
-              if (settings.maxTimer !== undefined)
-                this.maxTimer = settings.maxTimer
-              if (settings.maxAttempts !== undefined)
-                this.maxAttempts = settings.maxAttempts
-              if (settings.wordLength !== undefined)
-                this.wordLength = settings.wordLength
-              if (settings.chatEnabled !== undefined)
-                this.chatEnabled = settings.chatEnabled
-              if (settings.gameLogEnabled !== undefined)
-                this.gameLogEnabled = settings.gameLogEnabled
-
-              this.server.broadcastState()
-            }
-          }
+          this.updateSettings(sender.id, data)
           break
       }
     } catch (e) {
       console.error(e)
+    }
+  }
+
+  // Public Action Methods
+  public requestStartGame(playerId: string, reuseWord: boolean = false) {
+    const player = this.players.get(playerId)
+    if (
+      player?.isAdmin &&
+      (this.server.gameState === GameState.LOBBY ||
+        this.server.gameState === GameState.ENDED)
+    ) {
+      this.onStart(reuseWord)
+    }
+  }
+
+  public requestStopGame(playerId: string) {
+    const player = this.players.get(playerId)
+    if (player?.isAdmin && this.server.gameState === GameState.PLAYING) {
+      this.endGame()
+    }
+  }
+
+  public submitWord(playerId: string, word: string) {
+    if (
+      this.server.gameState === GameState.PLAYING &&
+      this.activePlayerId === playerId
+    ) {
+      this.handleGuess(playerId, word)
+    }
+  }
+
+  public updateTyping(playerId: string, text: string) {
+    if (
+      this.server.gameState === GameState.PLAYING &&
+      this.activePlayerId === playerId
+    ) {
+      this.broadcast({
+        type: ServerMessageType.TYPING_UPDATE,
+        text: text,
+      })
+    }
+  }
+
+  public updateSettings(playerId: string, settings: any) {
+    const player = this.players.get(playerId)
+    if (!player?.isAdmin) return
+
+    const result = WordleSettingsSchema.safeParse(settings)
+    if (result.success) {
+      const s = result.data
+      if (s.maxTimer !== undefined) this.maxTimer = s.maxTimer
+      if (s.maxAttempts !== undefined) this.maxAttempts = s.maxAttempts
+      if (s.wordLength !== undefined) this.wordLength = s.wordLength
+      if (s.chatEnabled !== undefined) this.chatEnabled = s.chatEnabled
+      if (s.gameLogEnabled !== undefined) this.gameLogEnabled = s.gameLogEnabled
+
+      this.server.broadcastState()
     }
   }
 
