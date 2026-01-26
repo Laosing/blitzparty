@@ -5,7 +5,12 @@ import {
   MockConnection,
   createMockConnectionContext,
 } from "../mocks/party"
-import { GameState, GameMode, ServerMessageType } from "../../shared/types"
+import {
+  GameState,
+  GameMode,
+  ServerMessageType,
+  GAME_CONFIG,
+} from "../../shared/types"
 import { WordleGame } from "../../party/games/wordle"
 
 // Mock DictionaryManager
@@ -56,6 +61,14 @@ describe("Wordle Game Logic", () => {
 
     expect(server.gameState).toBe(GameState.PLAYING)
     expect(game.targetWord).toBe("APPLE")
+  })
+
+  it("should initialize with default game settings", async () => {
+    const game = new WordleGame(server)
+
+    expect(game.maxTimer).toBe(GAME_CONFIG.WORDLE.TIMER.DEFAULT)
+    expect(game.maxAttempts).toBe(GAME_CONFIG.WORDLE.ATTEMPTS.DEFAULT)
+    expect(game.wordLength).toBe(GAME_CONFIG.WORDLE.LENGTH.DEFAULT)
   })
 
   it("should handle valid guesses and updates state", async () => {
@@ -125,5 +138,39 @@ describe("Wordle Game Logic", () => {
 
     expect(server.gameState).toBe(GameState.ENDED)
     expect(game.winnerId).toBeNull()
+  })
+
+  it("should update settings when admin requests", async () => {
+    const host = await joinPlayer("host")
+    server.activeGame = new WordleGame(server)
+    const game = server.activeGame as WordleGame
+
+    const newSettings = {
+      maxTimer: 120,
+      maxAttempts: 10,
+      wordLength: 4,
+    }
+
+    game.updateSettings("host", newSettings)
+
+    expect(game.maxTimer).toBe(120)
+    expect(game.maxAttempts).toBe(10)
+    expect(game.wordLength).toBe(4)
+  })
+
+  it("should ignore settings update from non-admin", async () => {
+    await joinPlayer("host")
+    await joinPlayer("p2")
+    server.activeGame = new WordleGame(server)
+    const game = server.activeGame as WordleGame
+
+    // Ensure p2 is not admin
+    expect(server.players.get("p2")?.isAdmin).toBe(false)
+
+    const originalMaxTimer = game.maxTimer
+
+    game.updateSettings("p2", { maxTimer: 999 })
+
+    expect(game.maxTimer).toBe(originalMaxTimer)
   })
 })

@@ -40,6 +40,7 @@ describe("Word Chain Game Logic", () => {
     } as any
   })
 
+  // Helper to simulate player join
   const joinPlayer = async (id: string) => {
     const conn = new MockConnection(id)
     room.connections.set(id, conn as any)
@@ -77,6 +78,15 @@ describe("Word Chain Game Logic", () => {
     expect(game.usedWords.has("TIGER")).toBe(true)
   })
 
+  it("should initialize with default game settings", async () => {
+    const game = new WordChainGame(server)
+    expect(game.maxTimer).toBe(GAME_CONFIG.WORD_CHAIN.TIMER.DEFAULT)
+    expect(game.startingLives).toBe(GAME_CONFIG.WORD_CHAIN.LIVES.DEFAULT)
+    expect(game.hardModeStartRound).toBe(
+      GAME_CONFIG.WORD_CHAIN.HARD_MODE_START.DEFAULT,
+    )
+  })
+
   it("should reject invalid start letter", async () => {
     await joinPlayer("host")
     const game = new WordChainGame(server)
@@ -102,7 +112,7 @@ describe("Word Chain Game Logic", () => {
     game.requestStartGame("host")
 
     game.currentWord = "TEST"
-    game.usedWords.add("TIGER") // Simulate "TIGER" was used
+    game.usedWords.add("TIGER")
 
     const activeConn = room.connections.get(game.activePlayerId!)
 
@@ -113,6 +123,40 @@ describe("Word Chain Game Logic", () => {
     expect(activeConn?.send).toHaveBeenCalledWith(
       expect.stringContaining("Word already used"),
     )
+  })
+
+  it("should update settings when admin requests", async () => {
+    const host = await joinPlayer("host")
+    const game = new WordChainGame(server)
+    server.activeGame = game
+
+    const newSettings = {
+      maxTimer: 45,
+      startingLives: 5,
+      hardModeStartRound: 10,
+    }
+
+    game.updateSettings("host", newSettings)
+
+    expect(game.maxTimer).toBe(45)
+    expect(game.startingLives).toBe(5)
+    expect(game.hardModeStartRound).toBe(10)
+  })
+
+  it("should ignore settings update from non-admin", async () => {
+    await joinPlayer("host")
+    const p2 = await joinPlayer("p2")
+    const game = new WordChainGame(server)
+    server.activeGame = game
+
+    // Ensure p2 is not admin
+    expect(server.players.get("p2")?.isAdmin).toBe(false)
+
+    const originalMaxTimer = game.maxTimer
+
+    game.updateSettings("p2", { maxTimer: 99 })
+
+    expect(game.maxTimer).toBe(originalMaxTimer)
   })
 
   // Hard Mode Tests

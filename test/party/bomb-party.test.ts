@@ -4,13 +4,12 @@ import {
   MockRoom,
   MockConnection,
   createMockConnectionContext,
-  MockStorage,
 } from "../mocks/party"
 import {
   GameState,
   GameMode,
-  BombPartyClientMessageType,
   ServerMessageType,
+  GAME_CONFIG,
 } from "../../shared/types"
 import { BombPartyGame } from "../../party/games/bomb-party"
 
@@ -55,6 +54,7 @@ describe("Bomb Party Game Logic", () => {
     // However, simplest way is to simulate a connection which triggers instantiation
   })
 
+  // Helper to simulate player join
   const joinPlayer = async (id: string) => {
     const conn = new MockConnection(id)
     room.connections.set(id, conn as any)
@@ -78,6 +78,22 @@ describe("Bomb Party Game Logic", () => {
     expect(game.round).toBe(1)
     // Should have started timer
     expect(game.timer).toBeGreaterThan(0)
+  })
+
+  it("should initialize with default game settings", async () => {
+    const game = new BombPartyGame(server)
+
+    expect(game.startingLives).toBe(GAME_CONFIG.BOMB_PARTY.LIVES.DEFAULT)
+    expect(game.maxTimer).toBe(GAME_CONFIG.BOMB_PARTY.TIMER.DEFAULT)
+    expect(game.syllableChangeThreshold).toBe(
+      GAME_CONFIG.BOMB_PARTY.SYLLABLE_CHANGE.DEFAULT,
+    )
+    expect(game.bonusWordLength).toBe(
+      GAME_CONFIG.BOMB_PARTY.BONUS_LENGTH.DEFAULT,
+    )
+    expect(game.hardModeStartRound).toBe(
+      GAME_CONFIG.BOMB_PARTY.HARD_MODE_START.DEFAULT,
+    )
   })
 
   it("should handle valid word submission", async () => {
@@ -233,5 +249,41 @@ describe("Bomb Party Game Logic", () => {
     expect(game.timer).toBeLessThanOrEqual(20)
 
     // Run it multiple times to ensure randomness if possible, but one check validates logic path
+  })
+
+  it("should update settings when admin requests", async () => {
+    const host = await joinPlayer("host")
+    server.activeGame = new BombPartyGame(server)
+    const game = server.activeGame as BombPartyGame
+
+    const newSettings = {
+      maxTimer: 45,
+      startingLives: 1,
+      hardModeStartRound: 5,
+      syllableChangeThreshold: 10,
+    }
+
+    game.updateSettings("host", newSettings)
+
+    expect(game.maxTimer).toBe(45)
+    expect(game.startingLives).toBe(1)
+    expect(game.hardModeStartRound).toBe(5)
+    expect(game.syllableChangeThreshold).toBe(10)
+  })
+
+  it("should ignore settings update from non-admin", async () => {
+    await joinPlayer("host")
+    await joinPlayer("p2")
+    server.activeGame = new BombPartyGame(server)
+    const game = server.activeGame as BombPartyGame
+
+    // Ensure p2 is not admin
+    expect(server.players.get("p2")?.isAdmin).toBe(false)
+
+    const originalMaxTimer = game.maxTimer
+
+    game.updateSettings("p2", { maxTimer: 99 })
+
+    expect(game.maxTimer).toBe(originalMaxTimer)
   })
 })
